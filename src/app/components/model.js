@@ -2,7 +2,7 @@
 
 import { useRef, useState, useEffect } from "react";
 import { Canvas, useFrame, extend } from "@react-three/fiber";
-import { OrbitControls, useTexture, shaderMaterial } from "@react-three/drei";
+import { OrbitControls, useTexture, shaderMaterial, Html } from "@react-three/drei";
 import * as THREE from "three";
 
 const GlowMaterial = shaderMaterial(
@@ -205,7 +205,7 @@ function ShootingStars() {
       // Animate shooting stars every 5 seconds
       for (let i = 0; i < shootingStarPositions.length / 6; i++) {
         const i6 = i * 6;
-        const cycleTime = time % 5; // 5 second cycle
+        const cycleTime = time % 3;; // 5 second cycle
         const starDelay = i * 0.3; // Stagger each star slightly
         const effectiveTime = (cycleTime - starDelay + 5) % 5;
         
@@ -316,7 +316,7 @@ function SaturnRings({ position }) {
   );
 }
 
-function EarthModel({ isAnimating, glowCenter, glowIntensity, texturePath, position }) {
+function EarthModel({ isAnimating, glowCenter, glowIntensity, texturePath, position, planetInfo, onHover, onHoverOut }) {
   const earthRef = useRef();
   const materialRef = useRef();
   const texture = useTexture(texturePath);
@@ -338,8 +338,8 @@ function EarthModel({ isAnimating, glowCenter, glowIntensity, texturePath, posit
       ref={earthRef}
       scale={0.8}
       position={position}
-      onPointerOver={() => {}}
-      onPointerOut={() => {}}
+      onPointerOver={() => onHover(planetInfo)}
+      onPointerOut={() => onHoverOut()}
     >
       <sphereGeometry args={[1, 32, 32]} />
       <glowMaterial
@@ -347,7 +347,6 @@ function EarthModel({ isAnimating, glowCenter, glowIntensity, texturePath, posit
         map={texture}
         glowCenter={glowCenter}
         glowRadius={0.4}
-        glowCi
         glowIntensity={glowIntensity}
         glowColor={new THREE.Color(0x66ccff)}
         time={0}
@@ -391,11 +390,88 @@ function Sun() {
   );
 }
 
+function MilkyWay() {
+  const milkyWayRef = useRef();
+  const texture = useTexture("/8k_stars_milky_way.jpg");
+
+  useFrame((state, delta) => {
+    if (milkyWayRef.current) {
+      milkyWayRef.current.rotation.y += delta * 0.001;
+    }
+  });
+
+  return (
+    <mesh ref={milkyWayRef} scale={[200, 200, 200]}>
+      <sphereGeometry args={[1, 64, 64]} />
+      <meshBasicMaterial 
+        map={texture} 
+        side={THREE.BackSide}
+        transparent={true}
+        opacity={0.8}
+      />
+    </mesh>
+  );
+}
+
+function MoonOrbit({ earthPosition, onHover, onHoverOut }) {
+  const moonRef = useRef();
+  const materialRef = useRef();
+  const texture = useTexture("/8k_moon.jpg");
+  const moonOrbitRadius = 2;
+
+  const moonInfo = {
+    name: "Moon",
+    description: "Earth's only natural satellite. The Moon influences Earth's tides and has been a subject of human exploration. Rules Cancer in astrology.",
+    distance: "238,855 miles from Earth",
+    diameter: "2,159 miles"
+  };
+
+  useFrame((state, delta) => {
+    if (moonRef.current) {
+      const time = state.clock.elapsedTime;
+      // Moon orbits Earth every 10 seconds
+      const moonX = earthPosition[0] + Math.cos(time * 0.6) * moonOrbitRadius;
+      const moonY = earthPosition[1] + 0.3; // Position Moon above Earth's plane
+      const moonZ = earthPosition[2] + Math.sin(time * 0.6) * moonOrbitRadius;
+      
+      moonRef.current.position.set(moonX, moonY, moonZ);
+      moonRef.current.rotation.y += delta * 0.05;
+      
+      if (materialRef.current) {
+        materialRef.current.viewVector = state.camera.position.clone().normalize();
+        materialRef.current.time = state.clock.elapsedTime;
+      }
+    }
+  });
+
+  return (
+    <mesh 
+      ref={moonRef} 
+      scale={0.3}
+      onPointerOver={() => onHover(moonInfo)}
+      onPointerOut={() => onHoverOut()}
+    >
+      <sphereGeometry args={[1, 32, 32]} />
+      <glowMaterial
+        ref={materialRef}
+        map={texture}
+        glowCenter={new THREE.Vector3(0, 0, 0)}
+        glowRadius={0.4}
+        glowIntensity={0.8}
+        glowColor={new THREE.Color(0xaaaaaa)}
+        time={0}
+        viewVector={new THREE.Vector3()}
+      />
+    </mesh>
+  );
+}
+
 function Scene({ onIntroComplete, setCurrentPlanet }) {
   const [isAnimating, setIsAnimating] = useState(true);
   const [glowIntensity, setGlowIntensity] = useState(0);
   const [glowCenter, setGlowCenter] = useState(new THREE.Vector3(0, 0.8, 0.6));
   const [currentPlanetIndex, setCurrentPlanetIndex] = useState(0);
+  const [hoveredPlanet, setHoveredPlanet] = useState(null);
   const orbitControlsRef = useRef();
 
   const handleIntroComplete = () => {
@@ -411,29 +487,110 @@ function Scene({ onIntroComplete, setCurrentPlanet }) {
     handleIntroComplete();
   }, []);
 
-  // Calculate circular positions for 7 planets with larger gap from sun
+  // Calculate circular positions for 12 zodiac planets plus Earth at center
   const radius = 7;
-  const angleStep = (2 * Math.PI) / 7;
+  const angleStep = (2 * Math.PI) / 12;
   const planetPositions = [
     [0, 0, 0], // Center Earth
-    [radius * Math.cos(0), 0, radius * Math.sin(0)], // Sun at 0°
-    [radius * Math.cos(angleStep), 0, radius * Math.sin(angleStep)], // Mars
-    [radius * Math.cos(2 * angleStep), 0, radius * Math.sin(2 * angleStep)], // Jupiter
-    [radius * Math.cos(3 * angleStep), 0, radius * Math.sin(3 * angleStep)], // Saturn
-    [radius * Math.cos(4 * angleStep), 0, radius * Math.sin(4 * angleStep)], // Uranus
-    [radius * Math.cos(5 * angleStep), 0, radius * Math.sin(5 * angleStep)], // Neptune
-    [radius * Math.cos(6 * angleStep), 0, radius * Math.sin(6 * angleStep)], // Venus
+    [radius * Math.cos(0), 0, radius * Math.sin(0)], // Mars (Aries)
+    [radius * Math.cos(angleStep), 0, radius * Math.sin(angleStep)], // Venus (Taurus)
+    [radius * Math.cos(2 * angleStep), 0, radius * Math.sin(2 * angleStep)], // Mercury (Gemini)
+    [radius * Math.cos(3 * angleStep), 0, radius * Math.sin(3 * angleStep)], // Moon (Cancer)
+    [radius * Math.cos(4 * angleStep), 0, radius * Math.sin(4 * angleStep)], // Sun (Leo)
+    [radius * Math.cos(5 * angleStep), 0, radius * Math.sin(5 * angleStep)], // Mercury (Virgo)
+    [radius * Math.cos(6 * angleStep), 0, radius * Math.sin(6 * angleStep)], // Venus (Libra)
+    [radius * Math.cos(7 * angleStep), 0, radius * Math.sin(7 * angleStep)], // Mars (Scorpio)
+    [radius * Math.cos(8 * angleStep), 0, radius * Math.sin(8 * angleStep)], // Jupiter (Sagittarius)
+    [radius * Math.cos(9 * angleStep), 0, radius * Math.sin(9 * angleStep)], // Saturn (Capricorn)
+    [radius * Math.cos(10 * angleStep), 0, radius * Math.sin(10 * angleStep)], // Uranus (Aquarius)
+    [radius * Math.cos(11 * angleStep), 0, radius * Math.sin(11 * angleStep)], // Neptune (Pisces)
   ];
 
   const planetData = [
-    { texture: "/Earth_imgFinal0.jpg", name: "Earth" },
-    { texture: "/sunmap.jpg", name: "Sun" },
-    { texture: "/mars_1k_color.jpg", name: "Mars" },
-    { texture: "/jupitermap.jpg", name: "Jupiter" },
-    { texture: "/saturnmap.jpg", name: "Saturn" },
-    { texture: "/uranusmap.jpg", name: "Uranus" },
-    { texture: "/neptunemap.jpg", name: "Neptune" },
-    { texture: "/venusmap.jpg", name: "Venus" },
+    { 
+      texture: "/Earth_imgFinal0.jpg", 
+      name: "Earth",
+      description: "The third planet from the Sun and the only known planet to harbor life. Earth has a diverse climate and is 71% covered by water.",
+      distance: "93 million miles from Sun",
+      diameter: "7,918 miles"
+    },
+    { 
+      texture: "/8k_mars.jpg", 
+      name: "Mars",
+      description: "Known as the Red Planet due to iron oxide on its surface. Mars has the largest volcano and canyon in the solar system. Rules Aries.",
+      distance: "142 million miles from Sun",
+      diameter: "4,212 miles"
+    },
+    { 
+      texture: "/8k_venus_surface.jpg", 
+      name: "Venus",
+      description: "The hottest planet in our solar system with surface temperatures of 900°F. Venus rotates backwards compared to most planets. Rules Taurus.",
+      distance: "67 million miles from Sun",
+      diameter: "7,521 miles"
+    },
+    { 
+      texture: "/8k_mercury.jpg", 
+      name: "Mercury",
+      description: "The smallest planet and closest to the Sun. Mercury has extreme temperature variations from -290°F to 800°F. Rules Gemini.",
+      distance: "36 million miles from Sun",
+      diameter: "3,032 miles"
+    },
+    { 
+      texture: "/8k_sun.jpg", 
+      name: "Sun",
+      description: "The star at the center of our solar system. It's a nearly perfect sphere of hot plasma and provides the energy that sustains life on Earth. Rules Leo.",
+      distance: "Center of Solar System",
+      diameter: "864,938 miles"
+    },
+    { 
+      texture: "/8k_mercury.jpg", 
+      name: "Mercury",
+      description: "The smallest planet and closest to the Sun. Mercury has extreme temperature variations from -290°F to 800°F. Rules Virgo.",
+      distance: "36 million miles from Sun",
+      diameter: "3,032 miles"
+    },
+    { 
+      texture: "/8k_venus_surface.jpg", 
+      name: "Venus",
+      description: "The hottest planet in our solar system with surface temperatures of 900°F. Venus rotates backwards compared to most planets. Rules Libra.",
+      distance: "67 million miles from Sun",
+      diameter: "7,521 miles"
+    },
+    { 
+      texture: "/8k_mars.jpg", 
+      name: "Mars",
+      description: "Known as the Red Planet due to iron oxide on its surface. Mars has the largest volcano and canyon in the solar system. Rules Scorpio.",
+      distance: "142 million miles from Sun",
+      diameter: "4,212 miles"
+    },
+    { 
+      texture: "/8k_jupiter.jpg", 
+      name: "Jupiter",
+      description: "The largest planet in our solar system. Jupiter is a gas giant with a Great Red Spot storm larger than Earth. Rules Sagittarius.",
+      distance: "484 million miles from Sun",
+      diameter: "86,881 miles"
+    },
+    { 
+      texture: "/8k_saturn.jpg", 
+      name: "Saturn",
+      description: "Famous for its prominent ring system. Saturn is a gas giant and the least dense planet in our solar system. Rules Capricorn.",
+      distance: "886 million miles from Sun",
+      diameter: "72,367 miles"
+    },
+    { 
+      texture: "/2k_uranus.jpg", 
+      name: "Uranus",
+      description: "An ice giant that rotates on its side. Uranus has a faint ring system and 27 known moons. Rules Aquarius.",
+      distance: "1.8 billion miles from Sun",
+      diameter: "31,518 miles"
+    },
+    { 
+      texture: "/2k_neptune.jpg", 
+      name: "Neptune",
+      description: "The windiest planet with speeds up to 1,200 mph. Neptune is an ice giant with a deep blue color. Rules Pisces.",
+      distance: "2.8 billion miles from Sun",
+      diameter: "30,775 miles"
+    },
   ];
 
   useEffect(() => {
@@ -468,11 +625,15 @@ function Scene({ onIntroComplete, setCurrentPlanet }) {
            Math.abs(state.camera.position.y - (targetPosition[1])) > 0.1 ||
            Math.abs(state.camera.position.z - (targetPosition[2] + 5)) > 0.1)) {
         
+        // Adjust camera distance for Mars to give more space
+        const isMars = planetData[currentPlanetIndex].name === "Mars";
+        const cameraDistance = isMars ? 8 : 5;
+        
         state.camera.position.lerp(
           new THREE.Vector3(
             targetPosition[0],
             targetPosition[1],
-            targetPosition[2] + 5
+            targetPosition[2] + cameraDistance
           ),
           0.05
         );
@@ -482,22 +643,68 @@ function Scene({ onIntroComplete, setCurrentPlanet }) {
 
   return (
     <>
+      <MilkyWay />
       <Stars />
       <ShootingStars />
       <ambientLight intensity={2.5} />
       <pointLight position={[10, 10, 10]} intensity={2} />
       
+      {/* Moon orbiting Earth */}
+      <MoonOrbit 
+        earthPosition={planetPositions[0]} 
+        onHover={setHoveredPlanet}
+        onHoverOut={() => setHoveredPlanet(null)}
+      />
+      
       {planetData.map((planet, index) => (
-        <EarthModel
-          key={index}
-          isAnimating={isAnimating}
-          glowIntensity={glowIntensity}
-          texturePath={planet.texture}
-          position={planetPositions[index]}
-        />
+        <group key={index}>
+          <EarthModel
+            isAnimating={isAnimating}
+            glowIntensity={glowIntensity}
+            texturePath={planet.texture}
+            position={planetPositions[index]}
+            planetInfo={planet}
+            onHover={setHoveredPlanet}
+            onHoverOut={() => setHoveredPlanet(null)}
+          />
+          
+          {/* Planet Name Label */}
+          <Html 
+            position={[
+              planetPositions[index][0],
+              planetPositions[index][1] - 1.0,
+              planetPositions[index][2]
+            ]} 
+            center
+            distanceFactor={5}
+            occlude={true}
+            transform
+            sprite
+            style={{ 
+              pointerEvents: 'none'
+            }}
+          >
+            <div style={{
+              background: 'rgba(0, 0, 0, 0.8)',
+              color: 'white',
+              padding: '6px 10px',
+              borderRadius: '8px',
+              fontSize: '11px',
+              fontWeight: 'bold',
+              border: '1px solid rgba(255, 255, 255, 0.3)',
+              backdropFilter: 'blur(8px)',
+              textAlign: 'center',
+              whiteSpace: 'nowrap',
+              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.5)',
+              minWidth: '60px'
+            }}>
+              {planet.name}
+            </div>
+          </Html>
+        </group>
       ))}
       
-      <SaturnRings position={planetPositions[4]} />
+      <SaturnRings position={planetPositions[9]} />
       
       <OrbitControls 
         ref={orbitControlsRef}
@@ -512,6 +719,79 @@ function Scene({ onIntroComplete, setCurrentPlanet }) {
         zoomSpeed={0.8}
         target={planetPositions[currentPlanetIndex]}
       />
+      
+      {/* Planet Description Tooltip */}
+      {hoveredPlanet && (
+        <Html 
+          position={
+            hoveredPlanet.name === "Moon" 
+              ? [planetPositions[0][0], planetPositions[0][1] - 2, planetPositions[0][2]]
+              : [
+                  planetPositions[planetData.findIndex(p => p.name === hoveredPlanet.name)][0],
+                  planetPositions[planetData.findIndex(p => p.name === hoveredPlanet.name)][1] - 2,
+                  planetPositions[planetData.findIndex(p => p.name === hoveredPlanet.name)][2]
+                ]
+          } 
+          distanceFactor={8}
+          occlude={false}
+          style={{ pointerEvents: 'none' }}
+        >
+          <div style={{
+            background: 'rgba(0, 0, 0, 0.85)',
+            color: 'white',
+            padding: '12px',
+            borderRadius: '10px',
+            width: '180px',
+            height: '180px',
+            fontSize: '11px',
+            border: '1px solid rgba(255, 255, 255, 0.3)',
+            backdropFilter: 'blur(10px)',
+            boxShadow: '0 8px 25px rgba(0, 0, 0, 0.6)',
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            alignItems: 'center',
+            transform: 'translate(-50%, -50%)'
+          }}>
+            <h3 style={{ 
+              margin: '0 0 8px 0', 
+              color: '#66ccff', 
+              fontSize: '14px',
+              fontWeight: 'bold'
+            }}>
+              {hoveredPlanet.name}
+            </h3>
+            <p style={{ 
+              margin: '0 0 10px 0', 
+              lineHeight: '1.2',
+              fontSize: '10px',
+              textAlign: 'justify',
+              overflow: 'hidden',
+              display: '-webkit-box',
+              WebkitLineClamp: 4,
+              WebkitBoxOrient: 'vertical'
+            }}>
+              {hoveredPlanet.description}
+            </p>
+            <div style={{ 
+              fontSize: '9px', 
+              color: '#ccc',
+              borderTop: '1px solid rgba(255, 255, 255, 0.2)',
+              paddingTop: '6px',
+              marginTop: '6px',
+              width: '100%'
+            }}>
+              <div style={{ marginBottom: '3px' }}>
+                <strong>Distance:</strong> {hoveredPlanet.distance}
+              </div>
+              <div>
+                <strong>Diameter:</strong> {hoveredPlanet.diameter}
+              </div>
+            </div>
+          </div>
+        </Html>
+      )}
     </>
   );
 }
