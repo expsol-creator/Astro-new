@@ -614,6 +614,111 @@ function MoonOrbit({ earthPosition, onHover, onHoverOut }) {
   );
 }
 
+function PlanetOrbitPath({ planetIndex, viewModeState }) {
+  // Don't show orbit for the Sun or if not in overview mode
+  if (planetIndex === 0 || viewModeState !== 'overview') {
+    return null;
+  }
+
+  // Orbital radii matching the dynamic positions
+  const orbitalRadii = [
+    null, // Sun
+    10, // Mars
+    7, // Venus
+    5.5, // Mercury
+    8.5, // Earth
+    14, // Jupiter
+    18, // Saturn
+  ];
+
+  const radius = orbitalRadii[planetIndex];
+  if (!radius) return null;
+
+  return (
+    <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
+      <ringGeometry args={[radius - 0.05, radius + 0.05, 128]} />
+      <meshBasicMaterial
+        color={0xffffff}
+        transparent={true}
+        opacity={0.2}
+        side={THREE.DoubleSide}
+      />
+    </mesh>
+  );
+}
+
+function PlanetAxis({ position, planetIndex, planetInfo, viewModeState }) {
+  const axisRef = useRef();
+
+  useFrame((state, delta) => {
+    if (axisRef.current) {
+      // Planetary rotation speeds (same as in EarthModel)
+      const rotationSpeeds = [
+        0.02, // Sun - slower
+        0.03, // Mars - slower
+        -0.05, // Venus (retrograde) - slower
+        0.06, // Mercury - slower
+        0.04, // Earth - slower
+        0.07, // Jupiter - slower
+        0.06, // Saturn - slower
+      ];
+
+      // Rotate the axis indicator with the planet
+      axisRef.current.rotation.y += delta * (rotationSpeeds[planetIndex] || 0.1);
+    }
+  });
+
+  // Don't show axis for the Sun or if not in overview mode
+  if (planetInfo.name === "Sun" || viewModeState !== 'overview') {
+    return null;
+  }
+
+  return (
+    <group ref={axisRef} position={position}>
+      {/* Equatorial circle */}
+      <mesh rotation={[Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.95, 1.05, 64]} />
+        <meshBasicMaterial
+          color={0xffffff}
+          transparent={true}
+          opacity={0.4}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      
+      {/* Axis line (vertical) */}
+      <mesh>
+        <cylinderGeometry args={[0.015, 0.015, 2.5, 8]} />
+        <meshBasicMaterial
+          color={0xffffff}
+          transparent={true}
+          opacity={0.7}
+        />
+      </mesh>
+      
+      {/* North pole marker */}
+      <mesh position={[0, 1.3, 0]}>
+        <sphereGeometry args={[0.06, 8, 8]} />
+        <meshBasicMaterial
+          color={0xffffff}
+          transparent={true}
+          opacity={0.9}
+        />
+      </mesh>
+      
+      {/* South pole marker */}
+      <mesh position={[0, -1.3, 0]}>
+        <sphereGeometry args={[0.06, 8, 8]} />
+        <meshBasicMaterial
+          color={0xffffff}
+          transparent={true}
+          opacity={0.9}
+        />
+      </mesh>
+    </group>
+  );
+}
+
 function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
   // Calculate static positions for individual view mode - moved to top
   const radius = 9; // Increased base radius for more spacing
@@ -687,8 +792,62 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
   const [hoveredPlanet, setHoveredPlanet] = useState(null);
   const [cameraDistance, setCameraDistance] = useState(5);
   const [viewModeState, setViewModeState] = useState('individual');
+  const [cameraMode, setCameraMode] = useState('normal');
   const [dynamicPlanetPositions, setDynamicPlanetPositions] = useState(staticPlanetPositions);
+  const [eclipseMode, setEclipseMode] = useState(false);
   const orbitControlsRef = useRef();
+  
+  // Camera mode configurations
+  const cameraModes = {
+    normal: {
+      fov: 60,
+      distance: 5,
+      position: (target, distance) => new THREE.Vector3(target[0], target[1], target[2] + distance),
+      name: 'Normal View'
+    },
+    wide: {
+      fov: 90,
+      distance: 8,
+      position: (target, distance) => new THREE.Vector3(target[0], target[1] + 2, target[2] + distance),
+      name: 'Wide Angle'
+    },
+    telephoto: {
+      fov: 30,
+      distance: 12,
+      position: (target, distance) => new THREE.Vector3(target[0], target[1], target[2] + distance),
+      name: 'Telephoto'
+    },
+    cinematic: {
+      fov: 45,
+      distance: 7,
+      position: (target, distance) => new THREE.Vector3(target[0] + 2, target[1] + 1, target[2] + distance - 2),
+      name: 'Cinematic'
+    },
+    bird: {
+      fov: 75,
+      distance: 10,
+      position: (target, distance) => new THREE.Vector3(target[0], target[1] + distance, target[2]),
+      name: 'Bird\'s Eye'
+    },
+    close: {
+      fov: 50,
+      distance: 3,
+      position: (target, distance) => new THREE.Vector3(target[0] + 1, target[1], target[2] + distance),
+      name: 'Close-up'
+    },
+    overview: {
+      fov: 75,
+      distance: 35,
+      position: (target, distance) => new THREE.Vector3(0, 8, distance),
+      name: 'Solar System'
+    },
+    ein: {
+      fov: 60,
+      distance: 25,
+      position: (target, distance) => new THREE.Vector3(5, 12, distance),
+      name: 'Ein Overview'
+    }
+  };
 
   const handleIntroComplete = () => {
     setTimeout(() => {
@@ -731,7 +890,7 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
 
   useEffect(() => {
     const handleWheel = (event) => {
-      if (viewModeState === 'overview') return; // Disable wheel scroll in overview mode
+      if (viewModeState === 'overview') return;
       
       event.preventDefault();
       const delta = event.deltaY > 0 ? 1 : -1;
@@ -746,6 +905,28 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
       if (event.key === 'v' || event.key === 'V') {
         setViewModeState(prev => prev === 'individual' ? 'overview' : 'individual');
         setViewMode(prev => prev === 'individual' ? 'overview' : 'individual');
+        setCameraMode(prev => prev === 'overview' ? 'normal' : 'overview');
+      }
+      
+      // Camera mode cycling with 'C' key
+      if (event.key === 'c' || event.key === 'C') {
+        const modes = Object.keys(cameraModes);
+        setCameraMode(prev => {
+          const currentIndex = modes.indexOf(prev);
+          const nextIndex = (currentIndex + 1) % modes.length;
+          const newMode = modes[nextIndex];
+          
+          // Update view mode based on camera mode
+          if (newMode === 'overview' || newMode === 'ein') {
+            setViewModeState('overview');
+            setViewMode('overview');
+          } else {
+            setViewModeState('individual');
+            setViewMode('individual');
+          }
+          
+          return newMode;
+        });
       }
     };
 
@@ -767,26 +948,23 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
     }
 
     if (state.camera && orbitControlsRef.current) {
+      const currentCameraMode = cameraModes[cameraMode];
+      
+      // Apply camera FOV
+      state.camera.fov = currentCameraMode.fov;
+      state.camera.updateProjectionMatrix();
+
       if (viewModeState === 'overview') {
-        // Overview mode - show all planets with adjusted FOV
+        // Overview mode settings
         orbitControlsRef.current.target.set(0, 0, 0);
-        const overviewDistance = 35; // Increased distance to fit all planets
-        setCameraDistance(overviewDistance);
+        setCameraDistance(currentCameraMode.distance);
         
-        // Adjust camera FOV for better overview
-        state.camera.fov = 75; // Increased FOV for wider view
-        state.camera.updateProjectionMatrix();
+        const targetPos = currentCameraMode.position([0, 0, 0], currentCameraMode.distance);
+        state.camera.position.lerp(targetPos, 0.05);
         
-        state.camera.position.lerp(
-          new THREE.Vector3(0, 8, overviewDistance), // Higher Y position for better angle
-          0.05
-        );
       } else {
-        // Individual planet mode - reset FOV
-        state.camera.fov = 60; // Original FOV for individual mode
-        state.camera.updateProjectionMatrix();
-        
-        const targetPosition = staticPlanetPositions[currentPlanetIndex];
+        // Individual planet mode
+        let targetPosition = staticPlanetPositions[currentPlanetIndex];
         
         orbitControlsRef.current.target.set(
           targetPosition[0],
@@ -795,23 +973,22 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
         );
         
         if (!orbitControlsRef.current.enabled || 
-            (Math.abs(state.camera.position.x - (targetPosition[0])) > 0.1 ||
-             Math.abs(state.camera.position.y - (targetPosition[1])) > 0.1 ||
-             Math.abs(state.camera.position.z - (targetPosition[2] + 5)) > 0.1)) {
+            (Math.abs(state.camera.position.x - targetPosition[0]) > 0.1 ||
+             Math.abs(state.camera.position.y - targetPosition[1]) > 0.1 ||
+             Math.abs(state.camera.position.z - (targetPosition[2] + currentCameraMode.distance)) > 0.1)) {
           
+          // Adjust distance based on planet type and camera mode
           const isMars = planetData[currentPlanetIndex].name === "Mars";
           const isJupiter = planetData[currentPlanetIndex].name === "Jupiter";
-          const distance = isMars ? 3 : isJupiter ? 4 : 5;
+          let distance = currentCameraMode.distance;
+          
+          if (isMars) distance = Math.max(distance * 0.6, 2);
+          if (isJupiter) distance = Math.max(distance * 0.8, 3);
+          
           setCameraDistance(distance);
           
-          state.camera.position.lerp(
-            new THREE.Vector3(
-              targetPosition[0],
-              targetPosition[1],
-              targetPosition[2] + distance
-            ),
-            0.05
-          );
+          const targetPos = currentCameraMode.position(targetPosition, distance);
+          state.camera.position.lerp(targetPos, 0.05);
         }
       }
     }
@@ -824,6 +1001,15 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
       <ShootingStars />
       <ambientLight intensity={2.5} />
       <pointLight position={[10, 10, 10]} intensity={2} />
+      
+      {/* Planet Orbital Paths - only show in overview mode */}
+      {planetData.map((planet, index) => (
+        <PlanetOrbitPath 
+          key={`orbit-${index}-${planet.name}`}
+          planetIndex={index}
+          viewModeState={viewModeState}
+        />
+      ))}
       
       {planetData.map((planet, index) => {
         // Calculate position based on view mode using stored positions
@@ -843,6 +1029,14 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
               onHoverOut={() => setHoveredPlanet(null)}
               viewModeState={viewModeState}
               planetIndex={index}
+            />
+            
+            {/* Planet Axis Indicator - only show in overview mode */}
+            <PlanetAxis 
+              position={position}
+              planetIndex={index}
+              planetInfo={planet}
+              viewModeState={viewModeState}
             />
             
             {/* Planet Name Label */}
@@ -897,131 +1091,77 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
       
       <OrbitControls 
         ref={orbitControlsRef}
-        enableZoom={true} // Enable zoom for both modes
+        enableZoom={viewModeState === 'overview' || cameraMode === 'bird' || cameraMode === 'wide'} 
         enableRotate={true} 
         enablePan={viewModeState === 'overview'}
-        minDistance={viewModeState === 'overview' ? 10 : 1} // Allow closer zoom in overview
-        maxDistance={viewModeState === 'overview' ? 22 : 10} // Allow farther zoom in overview
+        minDistance={viewModeState === 'overview' ? 10 : 1}
+        maxDistance={viewModeState === 'overview' ? 60 : 15}
         enableDamping={true}
         dampingFactor={0.05}
-        rotateSpeed={0.5}
-        zoomSpeed={1.2} // Increased zoom speed for better control
+        rotateSpeed={cameraMode === 'cinematic' ? 0.3 : 0.5}
+        zoomSpeed={cameraMode === 'telephoto' ? 0.5 : 1.2}
         target={viewModeState === 'overview' ? [0, 0, 0] : staticPlanetPositions[currentPlanetIndex]}
       />
       
-      {/* Planet Description Tooltip */}
-      {hoveredPlanet && viewModeState === 'individual' && (
-        <Html 
-          position={
-            hoveredPlanet.name === "Moon" 
-              ? [
-                  staticPlanetPositions[4][0] + (cameraDistance > 4 ? 3.5 : 2.5), // Adjust distance based on FOV
-                  staticPlanetPositions[4][1], 
-                  staticPlanetPositions[4][2]
-                ]
-              : [
-                  staticPlanetPositions[planetData.findIndex(p => p.name === hoveredPlanet.name)][0] + (cameraDistance > 4 ? 3.5 : 2.5), // Adjust distance based on FOV
-                  staticPlanetPositions[planetData.findIndex(p => p.name === hoveredPlanet.name)][1],
-                  staticPlanetPositions[planetData.findIndex(p => p.name === hoveredPlanet.name)][2]
-                ]
-          } 
-          center
-          distanceFactor={Math.max(3, cameraDistance - 1)} // Dynamic distance factor based on camera
-          occlude={false}
-          transform
-          sprite
-          style={{ 
-            pointerEvents: 'none',
-            userSelect: 'none'
-          }}
-        >
-          <div style={{
-            background: 'rgba(0, 0, 0, 0.9)',
-            color: 'white',
-            padding: cameraDistance > 4 ? '12px' : '15px', // Adjust padding based on FOV
-            borderRadius: '12px',
-            width: cameraDistance > 4 ? '240px' : '280px', // Responsive width based on FOV
-            fontSize: cameraDistance > 4 ? '10px' : '12px', // Responsive font size
-            border: '1px solid rgba(255, 255, 255, 0.3)',
-            backdropFilter: 'blur(15px)',
-            boxShadow: '0 8px 25px rgba(0, 0, 0, 0.7)',
-            textAlign: 'left',
-            display: cameraDistance < 8 ? 'flex' : 'none', // Hide if too far based on FOV
-            flexDirection: 'column',
-            justifyContent: 'flex-start',
-            alignItems: 'flex-start',
-            opacity: cameraDistance < 6 ? 1 : Math.max(0.3, 1 - (cameraDistance - 6) * 0.2) // Fade based on distance
-          }}>
-            <h3 style={{ 
-              margin: '0 0 10px 0', 
-              color: '#66ccff', 
-              fontSize: cameraDistance > 4 ? '14px' : '16px', // Responsive title size
-              fontWeight: 'bold',
-              textAlign: 'center',
-              width: '100%'
-            }}>
-              {hoveredPlanet.name}
-            </h3>
-            {cameraDistance < 7 && ( // Show description only when close enough
-              <p style={{ 
-                margin: '0 0 12px 0', 
-                lineHeight: '1.4',
-                fontSize: cameraDistance > 4 ? '9px' : '11px', // Responsive description size
-                textAlign: 'justify',
-                display: '-webkit-box',
-                WebkitLineClamp: cameraDistance > 5 ? 3 : 4, // Fewer lines when farther
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden'
-              }}>
-                {hoveredPlanet.description}
-              </p>
-            )}
-            {cameraDistance < 6 && ( // Show details only when very close
-              <div style={{ 
-                fontSize: cameraDistance > 4 ? '8px' : '10px', // Responsive details size
-                color: '#ccc',
-                borderTop: '1px solid rgba(255, 255, 255, 0.2)',
-                paddingTop: '8px',
-                marginTop: '8px',
-                width: '100%'
-              }}>
-                <div style={{ marginBottom: '4px' }}>
-                  <strong>Distance:</strong> {hoveredPlanet.distance}
-                </div>
-                <div>
-                  <strong>Diameter:</strong> {hoveredPlanet.diameter}
-                </div>
-              </div>
-            )}
-          </div>
-        </Html>
-      )}
-
-      {/* View Mode Instructions */}
+      {/* Camera Mode Instructions */}
       <Html position={[-10, 8, 0]} style={{ pointerEvents: 'none' }}>
         <div style={{
           background: 'rgba(0, 0, 0, 0.7)',
           color: 'white',
           padding: '8px 12px',
-          borderRadius: '0px',
-          fontSize: '12px',
+          borderRadius: '8px',
+          fontSize: '11px',
           border: '2px solid rgba(255, 255, 255, 0.3)',
-          borderStyle: 'solid',
-          width: '200px',
-          height: 'auto',
+          width: '220px',
           textAlign: 'center',
-          transform: viewModeState === 'overview' ? 'rotateY(0deg)' : 'rotateY(0deg)',
-          transition: 'transform 0.3s ease'
         }}>
-          <div>Press 'V' to toggle view mode</div>
-          <div style={{ fontSize: '10px', opacity: 0.8, marginTop: '4px' }}>
-            Current: {viewModeState === 'overview' ? 'Overview (Zoom enabled)' : 'Individual Planet'}
+          <div style={{ marginBottom: '6px' }}>
+            <strong>Controls:</strong>
+          </div>
+          <div style={{ fontSize: '10px', opacity: 0.9, marginBottom: '4px' }}>
+            Press 'V' to toggle view mode
+          </div>
+          <div style={{ fontSize: '10px', opacity: 0.9, marginBottom: '6px' }}>
+            Press 'C' to cycle camera modes
+          </div>
+          <div style={{ 
+            fontSize: '12px', 
+            color: '#66ccff', 
+            fontWeight: 'bold',
+            borderTop: '1px solid rgba(255, 255, 255, 0.2)',
+            paddingTop: '6px'
+          }}>
+            {cameraModes[cameraMode].name}
+          </div>
+          <div style={{ fontSize: '9px', opacity: 0.7, marginTop: '2px' }}>
+            FOV: {cameraModes[cameraMode].fov}°
           </div>
           {viewModeState === 'individual' && (
-            <div style={{ fontSize: '10px', opacity: 0.8 }}>
+            <div style={{ fontSize: '9px', opacity: 0.8, marginTop: '4px' }}>
               Scroll to navigate planets
             </div>
           )}
+        </div>
+      </Html>
+
+      {/* Camera Mode Indicator */}
+      <Html position={[10, 8, 0]} style={{ pointerEvents: 'none' }}>
+        <div style={{
+          background: 'rgba(0, 0, 0, 0.8)',
+          color: 'white',
+          padding: '6px 10px',
+          borderRadius: '6px',
+          fontSize: '10px',
+          border: '1px solid rgba(255, 255, 255, 0.3)',
+          minWidth: '100px',
+          textAlign: 'center',
+        }}>
+          <div style={{ color: '#66ccff', fontWeight: 'bold' }}>
+            Camera Mode
+          </div>
+          <div style={{ fontSize: '9px', opacity: 0.8 }}>
+            {cameraModes[cameraMode].name}
+          </div>
         </div>
       </Html>
     </>
@@ -1059,15 +1199,22 @@ export default function Global() {
           left: '50%',
           transform: 'translateX(-50%)',
           color: 'white',
-          fontSize: '18px',
+          fontSize: '16px',
           fontWeight: 'bold',
-          background: 'rgba(0,0,0,0.7)',
-          padding: '10px 20px',
+          background: 'rgba(0,0,0,0.8)',
+          padding: '12px 20px',
           borderRadius: '10px',
           zIndex: 1000,
-          border: '1px solid rgba(255, 255, 255, 0.2)'
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          textAlign: 'center',
+          minWidth: '200px'
         }}>
-          {viewMode === 'overview' ? 'Overview Mode' : currentPlanet}
+          <div style={{ fontSize: '18px' }}>
+            {viewMode === 'overview' ? 'Solar System View' : currentPlanet}
+          </div>
+          <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>
+            Press 'C' for camera modes • 'V' for view toggle
+          </div>
         </div>
       </div>
     </section>
