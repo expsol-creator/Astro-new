@@ -1,166 +1,19 @@
 "use client";
 
 import { useRef, useState, useEffect } from "react";
-import { Canvas, useFrame, extend } from "@react-three/fiber";
-import { OrbitControls, useTexture, shaderMaterial, Html } from "@react-three/drei";
+import { Canvas, useFrame } from "@react-three/fiber";
+import { OrbitControls, useTexture, Html } from "@react-three/drei";
 import * as THREE from "three";
-
-const GlowMaterial = shaderMaterial(
-  {
-    map: null,
-    glowCenter: new THREE.Vector3(0, 0, 0),
-    glowRadius: 0.4,
-    glowIntensity: 0.0,
-    glowColor: new THREE.Color(0x66ccff),
-    time: 0,
-    viewVector: new THREE.Vector3(),
-  },
-  `varying vec2 vUv; varying vec3 vPosition; varying vec3 vNormal; varying vec3 vViewPosition; void main() { vUv = uv; vPosition = position; vNormal = normal; vViewPosition = (modelViewMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-  `uniform sampler2D map; uniform vec3 glowCenter; uniform float glowRadius; uniform float glowIntensity; uniform vec3 glowColor; uniform float time; uniform vec3 viewVector; varying vec2 vUv; varying vec3 vPosition; varying vec3 vNormal; varying vec3 vViewPosition; void main() { vec4 texColor = texture2D(map, vUv); float dist = distance(vPosition, glowCenter); float glowBase = smoothstep(glowRadius, 0.0, dist) * glowIntensity; vec3 viewDir = normalize(vViewPosition); float glowFactor = max(0.0, dot(vNormal, viewDir)) * 2.0; float dynamicGlow = glowBase * (1.0 + sin(time * 3.0 + vPosition.y) * 0.3 + glowFactor); vec3 finalColor = mix(texColor.rgb, glowColor, dynamicGlow * 0.5); gl_FragColor = vec4(finalColor, 1.0); }`
-);
-
-const SunMaterial = shaderMaterial(
-  {
-    map: null,
-    time: 0,
-    viewVector: new THREE.Vector3(),
-    glowIntensity: 3.0,
-    shadowIntensity: 0.3,
-  },
-  `varying vec2 vUv; 
-   varying vec3 vPosition; 
-   varying vec3 vNormal; 
-   varying vec3 vWorldPosition;
-   varying vec3 vViewPosition;
-   uniform float time;
-   
-   void main() { 
-     vUv = uv; 
-     vPosition = position; 
-     vNormal = normalize(normalMatrix * normal);
-     vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
-     vViewPosition = (modelViewMatrix * vec4(position, 1.0)).xyz;
-     
-     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); 
-   }`,
-  `uniform sampler2D map; 
-   uniform float time; 
-   uniform vec3 viewVector;
-   uniform float glowIntensity;
-   uniform float shadowIntensity;
-   varying vec2 vUv; 
-   varying vec3 vPosition; 
-   varying vec3 vNormal;
-   varying vec3 vWorldPosition;
-   varying vec3 vViewPosition;
-   
-   void main() { 
-     vec4 texColor = texture2D(map, vUv);
-     
-     vec3 viewDir = normalize(cameraPosition - vWorldPosition);
-     float fresnel = 1.0 - max(0.0, dot(vNormal, viewDir));
-     
-     // Front glow effect
-     float frontGlow = pow(fresnel, 2.0) * glowIntensity;
-     
-     // Back shadow effect
-     float backShadow = max(0.0, dot(vNormal, viewDir));
-     backShadow = 1.0 - (backShadow * shadowIntensity);
-     
-     // Animated surface effects (only affecting color, not geometry)
-     float surface = sin(time * 4.0 + vUv.x * 10.0) * 0.1 + 0.9;
-     surface *= cos(time * 3.0 + vUv.y * 8.0) * 0.1 + 0.9;
-     
-     // Corona effect
-     vec3 coronaColor = vec3(1.0, 0.6, 0.1);
-     vec3 coreColor = vec3(1.0, 0.8, 0.3);
-     
-     vec3 sunColor = mix(coreColor, coronaColor, fresnel);
-     sunColor *= surface;
-     sunColor *= backShadow;
-     
-     // Add glow
-     vec3 glowColor = vec3(1.0, 0.5, 0.0);
-     vec3 finalColor = sunColor + (glowColor * frontGlow * 0.5);
-     
-     // Enhance brightness
-     finalColor *= texColor.rgb * 2.0;
-     
-     gl_FragColor = vec4(finalColor, 1.0); 
-   }`
-);
-
-const PlanetMaterial = shaderMaterial(
-  {
-    map: null,
-    time: 0,
-    sunPosition: new THREE.Vector3(0, 0, 0),
-    planetPosition: new THREE.Vector3(0, 0, 0),
-    lightIntensity: 1.0,
-    ambientStrength: 0.3,
-  },
-  `varying vec2 vUv; 
-   varying vec3 vPosition; 
-   varying vec3 vNormal; 
-   varying vec3 vWorldPosition;
-   uniform float time;
-   uniform vec3 sunPosition;
-   uniform vec3 planetPosition;
-   
-   void main() { 
-     vUv = uv; 
-     vPosition = position; 
-     vNormal = normalize(normalMatrix * normal);
-     vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
-     
-     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); 
-   }`,
-  `uniform sampler2D map; 
-   uniform float time; 
-   uniform vec3 sunPosition;
-   uniform vec3 planetPosition;
-   uniform float lightIntensity;
-   uniform float ambientStrength;
-   varying vec2 vUv; 
-   varying vec3 vPosition; 
-   varying vec3 vNormal;
-   varying vec3 vWorldPosition;
-   
-   void main() { 
-     vec4 texColor = texture2D(map, vUv);
-     
-     // Calculate light direction from sun to current surface point
-     vec3 lightDirection = normalize(sunPosition - vWorldPosition);
-     
-     // Calculate how much light hits this surface (dot product of normal and light direction)
-     float lightDot = max(0.0, dot(vNormal, lightDirection));
-     
-     // Create smooth day/night transition
-     float dayNightTransition = smoothstep(0.0, 0.3, lightDot);
-     
-     // Add some atmospheric scattering effect
-     float atmosphereGlow = pow(1.0 - abs(dot(vNormal, lightDirection)), 2.0) * 0.2;
-     
-     // Calculate distance falloff from sun
-     float distance = length(sunPosition - planetPosition);
-     float distanceFalloff = 1.0 / (1.0 + distance * 0.01);
-     
-     // Combine lighting components
-     float finalLight = (ambientStrength + dayNightTransition * lightIntensity * distanceFalloff) + atmosphereGlow;
-     
-     // Apply subtle color temperature shift (warmer on lit side, cooler on dark side)
-     vec3 warmTint = vec3(1.1, 1.0, 0.9);
-     vec3 coolTint = vec3(0.8, 0.9, 1.2);
-     vec3 colorTint = mix(coolTint, warmTint, dayNightTransition);
-     
-     // Final color calculation
-     vec3 finalColor = texColor.rgb * finalLight * colorTint;
-     
-     gl_FragColor = vec4(finalColor, texColor.a); 
-   }`
-);
-
-extend({ GlowMaterial, SunMaterial, PlanetMaterial });
+import { 
+  EarthModel, 
+  MoonOrbit, 
+  SaturnRings, 
+  PlanetOrbitPath, 
+  PlanetAxis, 
+  planetData, 
+  getPlanetPosition 
+} from './PlanetarySystem';
+import RahuKetuSimulation from './RahuKetuSimulation';
 
 function Stars() {
   const starsRef = useRef();
@@ -238,27 +91,27 @@ function ShootingStars() {
   const [shootingStarPositions, setShootingStarPositions] = useState(null);
 
   useEffect(() => {
-    const starCount = 5;
-    const positions = new Float32Array(starCount * 6); // 2 points per line (start and end)
+    const starCount = 8; // Increased count for more variety
+    const positions = new Float32Array(starCount * 6);
     
     for (let i = 0; i < starCount; i++) {
       const i6 = i * 6;
-      // Random starting position
-      const startX = (Math.random() - 0.5) * 150;
-      const startY = (Math.random() - 0.5) * 150;
-      const startZ = (Math.random() - 0.5) * 150;
+      // Start from upper atmosphere positions for more realistic entry
+      const startX = (Math.random() - 0.5) * 200;
+      const startY = 80 + Math.random() * 40; // Start high in the sky
+      const startZ = (Math.random() - 0.5) * 200;
       
-      // Direction for shooting star trail
-      const dirX = (Math.random() - 0.5) * 20;
-      const dirY = (Math.random() - 0.5) * 20;
-      const dirZ = (Math.random() - 0.5) * 20;
+      // Create realistic downward trajectory with slight horizontal movement
+      const dirX = (Math.random() - 0.5) * 15; // Less horizontal spread
+      const dirY = -25 - Math.random() * 15; // Stronger downward motion
+      const dirZ = (Math.random() - 0.5) * 15;
       
       // Start point
       positions[i6] = startX;
       positions[i6 + 1] = startY;
       positions[i6 + 2] = startZ;
       
-      // End point (trail)
+      // End point (creates the trail)
       positions[i6 + 3] = startX + dirX;
       positions[i6 + 4] = startY + dirY;
       positions[i6 + 5] = startZ + dirZ;
@@ -272,32 +125,43 @@ function ShootingStars() {
       const time = state.clock.elapsedTime;
       const positionAttribute = shootingStarsRef.current.geometry.attributes.position;
       
-      // Animate shooting stars every 8 seconds with slower motion
+      // Realistic shooting star cycle - longer intervals like real meteors
       for (let i = 0; i < shootingStarPositions.length / 6; i++) {
         const i6 = i * 6;
-        const cycleTime = time % 8; // 8 second cycle for slower motion
-        const starDelay = i * 0.5; // Increased delay between stars
-        const effectiveTime = (cycleTime - starDelay + 8) % 8;
+        const cycleTime = time % 15; // 15 second cycle for more realistic timing
+        const starDelay = i * 1.8; // Staggered timing between different meteors
+        const effectiveTime = (cycleTime - starDelay + 15) % 15;
         
-        if (effectiveTime < 3) { // Show shooting star for 3 seconds
-          const progress = effectiveTime / 3;
-          const speed = 15; // Reduced speed for slow motion
+        if (effectiveTime < 4) { // Visible for 4 seconds - slow motion effect
+          const progress = effectiveTime / 4;
           
-          positionAttribute.array[i6] = shootingStarPositions[i6] + progress * speed * Math.cos(i);
-          positionAttribute.array[i6 + 1] = shootingStarPositions[i6 + 1] + progress * speed * Math.sin(i);
-          positionAttribute.array[i6 + 2] = shootingStarPositions[i6 + 2] + progress * speed * 0.3;
+          // Realistic physics - faster acceleration as it falls
+          const acceleratedProgress = progress * progress; // Quadratic acceleration
+          const speed = 8 + acceleratedProgress * 12; // Speed increases from 8 to 20
           
-          positionAttribute.array[i6 + 3] = shootingStarPositions[i6 + 3] + progress * speed * Math.cos(i);
-          positionAttribute.array[i6 + 4] = shootingStarPositions[i6 + 4] + progress * speed * Math.sin(i);
-          positionAttribute.array[i6 + 5] = shootingStarPositions[i6 + 5] + progress * speed * 0.3;
+          // Calculate realistic trajectory
+          const gravity = acceleratedProgress * 2; // Gravity effect
+          
+          // Head of the meteor
+          positionAttribute.array[i6] = shootingStarPositions[i6] + acceleratedProgress * speed * Math.cos(i * 0.7);
+          positionAttribute.array[i6 + 1] = shootingStarPositions[i6 + 1] - acceleratedProgress * speed - gravity * 5;
+          positionAttribute.array[i6 + 2] = shootingStarPositions[i6 + 2] + acceleratedProgress * speed * Math.sin(i * 0.5);
+          
+          // Tail of the meteor (creates the streak effect)
+          const tailOffset = 0.3; // Tail follows slightly behind
+          const tailProgress = Math.max(0, acceleratedProgress - tailOffset);
+          positionAttribute.array[i6 + 3] = shootingStarPositions[i6 + 3] + tailProgress * speed * Math.cos(i * 0.7);
+          positionAttribute.array[i6 + 4] = shootingStarPositions[i6 + 4] - tailProgress * speed - gravity * 3;
+          positionAttribute.array[i6 + 5] = shootingStarPositions[i6 + 5] + tailProgress * speed * Math.sin(i * 0.5);
+          
         } else {
           // Hide shooting star when not active
-          positionAttribute.array[i6] = 999;
-          positionAttribute.array[i6 + 1] = 999;
-          positionAttribute.array[i6 + 2] = 999;
-          positionAttribute.array[i6 + 3] = 999;
-          positionAttribute.array[i6 + 4] = 999;
-          positionAttribute.array[i6 + 5] = 999;
+          positionAttribute.array[i6] = 1000;
+          positionAttribute.array[i6 + 1] = 1000;
+          positionAttribute.array[i6 + 2] = 1000;
+          positionAttribute.array[i6 + 3] = 1000;
+          positionAttribute.array[i6 + 4] = 1000;
+          positionAttribute.array[i6 + 5] = 1000;
         }
       }
       positionAttribute.needsUpdate = true;
@@ -319,219 +183,10 @@ function ShootingStars() {
       <lineBasicMaterial
         color={0xffffff}
         transparent
-        opacity={0.9}
-        linewidth={3}
+        opacity={0.8}
+        linewidth={2}
       />
     </line>
-  );
-}
-
-function SaturnRings({ position }) {
-  const ringsRef = useRef();
-
-  useFrame((state, delta) => {
-    if (ringsRef.current) {
-      ringsRef.current.rotation.z += delta * 0.02;
-    }
-  });
-
-  return (
-    <group ref={ringsRef} position={position} rotation={[Math.PI / 2 + 0.1, 0, 0]}>
-      {/* A Ring (outermost) */}
-      <mesh>
-        <ringGeometry args={[1.8, 2.2, 128]} />
-        <meshBasicMaterial
-          color={0xc8b99c}
-          transparent={true}
-          opacity={0.4}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-      
-      {/* Cassini Division (gap) */}
-      
-      {/* B Ring (brightest and most prominent) */}
-      <mesh>
-        <ringGeometry args={[1.4, 1.75, 128]} />
-        <meshBasicMaterial
-          color={0xe6ddd4}
-          transparent={true}
-          opacity={0.7}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-      
-      {/* C Ring (innermost, more transparent) */}
-      <mesh>
-        <ringGeometry args={[1.1, 1.35, 128]} />
-        <meshBasicMaterial
-          color={0x9d8f7f}
-          transparent={true}
-          opacity={0.3}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-      
-      {/* D Ring (very faint, closest to planet) */}
-      <mesh>
-        <ringGeometry args={[1.05, 1.08, 64]} />
-        <meshBasicMaterial
-          color={0x8b7d6b}
-          transparent={true}
-          opacity={0.15}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-    </group>
-  );
-}
-
-function EarthModel({ isAnimating, glowCenter, glowIntensity, texturePath, position, planetInfo, onHover, onHoverOut, viewModeState, planetIndex }) {
-  const earthRef = useRef();
-  const materialRef = useRef();
-  const texture = useTexture(texturePath);
-
-  useFrame((state, delta) => {
-    if (earthRef.current) {
-      // Planetary rotation speeds (slower for all planets)
-      const rotationSpeeds = [
-        0.02, // Sun - slower
-        0.03, // Mars - slower
-        -0.05, // Venus (retrograde) - slower
-        0.06, // Mercury - slower
-        0.04, // Earth - slower
-        0.07, // Jupiter - slower
-        0.06, // Saturn - slower
-      ];
-
-      // Always rotate on axis
-      earthRef.current.rotation.y += delta * (rotationSpeeds[planetIndex] || 0.1);
-      
-      if (materialRef.current) {
-        // Update shader uniforms for lighting
-        materialRef.current.time = state.clock.elapsedTime;
-        materialRef.current.sunPosition = new THREE.Vector3(0, 0, 0); // Sun is always at origin
-        materialRef.current.planetPosition = new THREE.Vector3(position[0], position[1], position[2]);
-      }
-    }
-  });
-
-  // Enhanced Sun rendering with special effects
-  if (planetInfo.name === "Sun") {
-    return (
-      <group position={position}>
-        {/* Main Sun mesh */}
-        <mesh
-          ref={earthRef}
-          scale={1.2}
-          onPointerOver={() => onHover && onHover(planetInfo)}
-          onPointerOut={() => onHoverOut && onHoverOut()}
-        >
-          <sphereGeometry args={[1, 64, 64]} />
-          <sunMaterial
-            ref={materialRef}
-            map={texture}
-            time={0}
-            viewVector={new THREE.Vector3()}
-            glowIntensity={4.0}
-            shadowIntensity={0.2}
-          />
-        </mesh>
-        
-        {/* Enhanced lighting for Sun */}
-        <pointLight 
-          position={[0, 0, 0]} 
-          intensity={6} 
-          color={0xffaa00} 
-          decay={1.5}
-          distance={50}
-        />
-        <pointLight 
-          position={[0, 0, 0]} 
-          intensity={3} 
-          color={0xff6600} 
-          decay={1}
-          distance={30}
-        />
-        
-        {/* Sun corona glow effect */}
-        <mesh scale={1.8}>
-          <sphereGeometry args={[1, 32, 32]} />
-          <meshBasicMaterial
-            color={0xffaa00}
-            transparent={true}
-            opacity={0.1}
-            side={THREE.BackSide}
-          />
-        </mesh>
-        
-        {/* Outer glow ring */}
-        <mesh scale={2.2}>
-          <sphereGeometry args={[1, 24, 24]} />
-          <meshBasicMaterial
-            color={0xff4400}
-            transparent={true}
-            opacity={0.05}
-            side={THREE.BackSide}
-          />
-        </mesh>
-      </group>
-    );
-  }
-
-  return (
-    <mesh
-      ref={earthRef}
-      scale={0.8}
-      position={position}
-      onPointerOver={() => onHover && onHover(planetInfo)}
-      onPointerOut={() => onHoverOut && onHoverOut()}
-    >
-      <sphereGeometry args={[1, 32, 32]} />
-      <planetMaterial
-        ref={materialRef}
-        map={texture}
-        time={0}
-        sunPosition={new THREE.Vector3(0, 0, 0)}
-        planetPosition={new THREE.Vector3(position[0], position[1], position[2])}
-        lightIntensity={1.2}
-        ambientStrength={0.25}
-      />
-    </mesh>
-  );
-}
-;
-function Sun() {
-  const sunRef = useRef();
-  const materialRef = useRef();
-  const texture = useTexture("/sunmap.jpg");
-
-  useFrame((state, delta) => {
-    if (sunRef.current) {
-      sunRef.current.rotation.y += delta * 0.05;
-      if (materialRef.current) {
-        materialRef.current.viewVector = state.camera.position.clone().normalize();
-        materialRef.current.time = state.clock.elapsedTime;
-      }
-    }
-  });
-
-  return (
-    <group>
-      <mesh ref={sunRef} scale={1.5} position={[0, 0, 0]}>
-        <sphereGeometry args={[1, 64, 64]} />
-        <sunMaterial
-          ref={materialRef}
-          map={texture}
-          time={0}
-          viewVector={new THREE.Vector3()}
-          glowIntensity={3.0}
-          shadowIntensity={0.3}
-        />
-      </mesh>
-      <pointLight position={[0, 0, 0]} intensity={4} color={0xffaa00} decay={2} />
-      <pointLight position={[0, 0, 0]} intensity={1.5} color={0xff6600} decay={1} />
-    </group>
   );
 }
 
@@ -552,167 +207,125 @@ function MilkyWay() {
         map={texture} 
         side={THREE.BackSide}
         transparent={true}
-        opacity={0.8}
+        opacity={0.6}
       />
     </mesh>
   );
 }
 
-function MoonOrbit({ earthPosition, onHover, onHoverOut }) {
-  const moonRef = useRef();
-  const materialRef = useRef();
-  
-  // Always call useTexture hook consistently
-  const texture = useTexture("/8k_moon.jpg");
-  const moonOrbitRadius = 2;
-
-  const moonInfo = {
-    name: "Moon",
-    description: "Earth's only natural satellite. The Moon influences Earth's tides and has been a subject of human exploration. Rules Cancer in astrology.",
-    distance: "238,855 miles from Earth",
-    diameter: "2,159 miles"
-  };
+function NebulaBackground() {
+  const nebulaRef = useRef();
+  const nebula2Ref = useRef();
+  const nebula3Ref = useRef();
+  const texture = useTexture("/3d-render-solar-system-background-with-colourful-nebula.jpg");
 
   useFrame((state, delta) => {
-    if (moonRef.current) {
-      const time = state.clock.elapsedTime;
-      // Moon orbits Earth every 10 seconds
-      const moonX = earthPosition[0] + Math.cos(time * 0.6) * moonOrbitRadius;
-      const moonY = earthPosition[1] + 0.3; // Position Moon above Earth's plane
-      const moonZ = earthPosition[2] + Math.sin(time * 0.6) * moonOrbitRadius;
-      
-      moonRef.current.position.set(moonX, moonY, moonZ);
-      moonRef.current.rotation.y += delta * 0.05;
-      
-      if (materialRef.current) {
-        // Update shader uniforms for lighting
-        materialRef.current.time = state.clock.elapsedTime;
-        materialRef.current.sunPosition = new THREE.Vector3(0, 0, 0);
-        materialRef.current.planetPosition = new THREE.Vector3(moonX, moonY, moonZ);
-      }
+    const time = state.clock.elapsedTime;
+    
+    if (nebulaRef.current) {
+      // Slow rotation and subtle movement for main nebula
+      nebulaRef.current.rotation.y += delta * 0.0005;
+      nebulaRef.current.rotation.z += delta * 0.0003;
+      nebulaRef.current.position.x = Math.sin(time * 0.1) * 2;
+      nebulaRef.current.position.y = Math.cos(time * 0.08) * 1.5;
+    }
+    
+    if (nebula2Ref.current) {
+      // Different rotation for variety
+      nebula2Ref.current.rotation.y -= delta * 0.0004;
+      nebula2Ref.current.rotation.x += delta * 0.0002;
+      nebula2Ref.current.position.z = Math.sin(time * 0.05) * 3;
+    }
+    
+    if (nebula3Ref.current) {
+      // Third nebula with different motion
+      nebula3Ref.current.rotation.z += delta * 0.0006;
+      nebula3Ref.current.position.x = Math.cos(time * 0.07) * 2.5;
+      nebula3Ref.current.position.y = Math.sin(time * 0.09) * 1.8;
     }
   });
 
   return (
-    <mesh 
-      ref={moonRef} 
-      scale={0.3}
-      onPointerOver={() => onHover(moonInfo)}
-      onPointerOut={() => onHoverOut()}
-    >
-      <sphereGeometry args={[1, 32, 32]} />
-      <planetMaterial
-        ref={materialRef}
-        map={texture}
-        time={0}
-        sunPosition={new THREE.Vector3(0, 0, 0)}
-        planetPosition={new THREE.Vector3(0, 0, 0)}
-        lightIntensity={0.8}
-        ambientStrength={0.2}
-      />
-    </mesh>
-  );
-}
-
-function PlanetOrbitPath({ planetIndex, viewModeState }) {
-  // Don't show orbit for the Sun or if not in overview mode
-  if (planetIndex === 0 || viewModeState !== 'overview') {
-    return null;
-  }
-
-  // Orbital radii matching the dynamic positions
-  const orbitalRadii = [
-    null, // Sun
-    10, // Mars
-    7, // Venus
-    5.5, // Mercury
-    8.5, // Earth
-    14, // Jupiter
-    18, // Saturn
-  ];
-
-  const radius = orbitalRadii[planetIndex];
-  if (!radius) return null;
-
-  return (
-    <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-      <ringGeometry args={[radius - 0.05, radius + 0.05, 128]} />
-      <meshBasicMaterial
-        color={0xffffff}
-        transparent={true}
-        opacity={0.2}
-        side={THREE.DoubleSide}
-      />
-    </mesh>
-  );
-}
-
-function PlanetAxis({ position, planetIndex, planetInfo, viewModeState }) {
-  const axisRef = useRef();
-
-  useFrame((state, delta) => {
-    if (axisRef.current) {
-      // Planetary rotation speeds (same as in EarthModel)
-      const rotationSpeeds = [
-        0.02, // Sun - slower
-        0.03, // Mars - slower
-        -0.05, // Venus (retrograde) - slower
-        0.06, // Mercury - slower
-        0.04, // Earth - slower
-        0.07, // Jupiter - slower
-        0.06, // Saturn - slower
-      ];
-
-      // Rotate the axis indicator with the planet
-      axisRef.current.rotation.y += delta * (rotationSpeeds[planetIndex] || 0.1);
-    }
-  });
-
-  // Don't show axis for the Sun or if not in overview mode
-  if (planetInfo.name === "Sun" || viewModeState !== 'overview') {
-    return null;
-  }
-
-  return (
-    <group ref={axisRef} position={position}>
-      {/* Equatorial circle */}
-      <mesh rotation={[Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[0.95, 1.05, 64]} />
-        <meshBasicMaterial
-          color={0xffffff}
+    <group>
+      {/* Main nebula in background */}
+      <mesh 
+        ref={nebulaRef} 
+        position={[30, 15, -80]} 
+        rotation={[0.3, 0.8, 0.2]}
+        scale={[60, 40, 30]}
+      >
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial 
+          map={texture} 
+          transparent={true}
+          opacity={0.7}
+          side={THREE.DoubleSide}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+      
+      {/* Second nebula positioned in different corner */}
+      <mesh 
+        ref={nebula2Ref} 
+        position={[-45, -20, -90]} 
+        rotation={[0.1, -0.5, 0.4]}
+        scale={[45, 35, 25]}
+      >
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial 
+          map={texture} 
+          transparent={true}
+          opacity={0.5}
+          side={THREE.DoubleSide}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+      
+      {/* Third nebula for more coverage */}
+      <mesh 
+        ref={nebula3Ref} 
+        position={[20, -30, -70]} 
+        rotation={[-0.2, 1.2, -0.3]}
+        scale={[50, 30, 20]}
+      >
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial 
+          map={texture} 
           transparent={true}
           opacity={0.4}
           side={THREE.DoubleSide}
+          blending={THREE.AdditiveBlending}
         />
       </mesh>
       
-      {/* Axis line (vertical) */}
-      <mesh>
-        <cylinderGeometry args={[0.015, 0.015, 2.5, 8]} />
-        <meshBasicMaterial
-          color={0xffffff}
+      {/* Additional smaller nebula patches for realism */}
+      <mesh 
+        position={[-20, 25, -60]} 
+        rotation={[0.5, -0.8, 0.1]}
+        scale={[25, 20, 15]}
+      >
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial 
+          map={texture} 
           transparent={true}
-          opacity={0.7}
+          opacity={0.3}
+          side={THREE.DoubleSide}
+          blending={THREE.AdditiveBlending}
         />
       </mesh>
       
-      {/* North pole marker */}
-      <mesh position={[0, 1.3, 0]}>
-        <sphereGeometry args={[0.06, 8, 8]} />
-        <meshBasicMaterial
-          color={0xffffff}
+      <mesh 
+        position={[40, -10, -85]} 
+        rotation={[-0.3, 0.6, -0.2]}
+        scale={[35, 25, 18]}
+      >
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial 
+          map={texture} 
           transparent={true}
-          opacity={0.9}
-        />
-      </mesh>
-      
-      {/* South pole marker */}
-      <mesh position={[0, -1.3, 0]}>
-        <sphereGeometry args={[0.06, 8, 8]} />
-        <meshBasicMaterial
-          color={0xffffff}
-          transparent={true}
-          opacity={0.9}
+          opacity={0.35}
+          side={THREE.DoubleSide}
+          blending={THREE.AdditiveBlending}
         />
       </mesh>
     </group>
@@ -720,69 +333,33 @@ function PlanetAxis({ position, planetIndex, planetInfo, viewModeState }) {
 }
 
 function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
-  // Calculate static positions for individual view mode - moved to top
-  const radius = 9; // Increased base radius for more spacing
-  const angleStep = (2 * Math.PI) / 7; // Changed to 7 to evenly distribute 7 planets
+  // Calculate static positions for individual view mode - compacted spacing
+  const radius = 6; // Reduced from 9 to 6
+  const angleStep = (2 * Math.PI) / 7;
+  
+  // Bird's eye view circular arrangement - increased spacing from sun
+  const getBirdEyePositions = () => {
+    const birdRadius = 7; // Increased from 4 to 7 for more space from sun
+    const birdAngleStep = (2 * Math.PI) / 6; // 6 planets around the sun
+    return [
+      [0, 0, 0], // Center Sun
+      [birdRadius * Math.cos(0), 0, birdRadius * Math.sin(0)], // Mars
+      [birdRadius * Math.cos(birdAngleStep), 0, birdRadius * Math.sin(birdAngleStep)], // Venus
+      [birdRadius * Math.cos(2 * birdAngleStep), 0, birdRadius * Math.sin(2 * birdAngleStep)], // Mercury
+      [birdRadius * Math.cos(3 * birdAngleStep), 0, birdRadius * Math.sin(3 * birdAngleStep)], // Earth
+      [birdRadius * Math.cos(4 * birdAngleStep), 0, birdRadius * Math.sin(4 * birdAngleStep)], // Jupiter
+      [birdRadius * Math.cos(5 * birdAngleStep), 0, birdRadius * Math.sin(5 * birdAngleStep)], // Saturn
+    ];
+  };
+
   const staticPlanetPositions = [
     [0, 0, 0], // Center Sun
     [radius * Math.cos(0), 0, radius * Math.sin(0)], // Mars
     [radius * Math.cos(angleStep), 0, radius * Math.sin(angleStep)], // Venus
-    [(radius - 1) * Math.cos(2 * angleStep), 0, (radius - 1) * Math.sin(2 * angleStep)], // Mercury - closer
+    [(radius - 1.5) * Math.cos(2 * angleStep), 0, (radius - 1.5) * Math.sin(2 * angleStep)], // Mercury - closer
     [radius * Math.cos(3 * angleStep), 0, radius * Math.sin(3 * angleStep)], // Earth
-    [(radius + 2) * Math.cos(4 * angleStep), 0, (radius + 2) * Math.sin(4 * angleStep)], // Jupiter - farther
-    [(radius + 3) * Math.cos(5 * angleStep), 0, (radius + 3) * Math.sin(5 * angleStep)], // Saturn - farther
-  ];
-
-  const planetData = [
-    { 
-      texture: "/8k_sun.jpg", 
-      name: "Sun",
-      description: "The star at the center of our solar system. It's a nearly perfect sphere of hot plasma and provides the energy that sustains life on Earth.",
-      distance: "Center of Solar System",
-      diameter: "864,938 miles"
-    },
-    { 
-      texture: "/8k_mars.jpg", 
-      name: "Mars",
-      description: "Known as the Red Planet due to iron oxide on its surface. Mars has the largest volcano and canyon in the solar system.",
-      distance: "142 million miles from Sun",
-      diameter: "4,212 miles"
-    },
-    { 
-      texture: "/8k_venus_surface.jpg", 
-      name: "Venus",
-      description: "The hottest planet in our solar system with surface temperatures of 900°F. Venus rotates backwards compared to most planets.",
-      distance: "67 million miles from Sun",
-      diameter: "7,521 miles"
-    },
-    { 
-      texture: "/8k_mercury.jpg", 
-      name: "Mercury",
-      description: "The smallest planet and closest to the Sun. Mercury has extreme temperature variations from -290°F to 800°F.",
-      distance: "36 million miles from Sun",
-      diameter: "3,032 miles"
-    },
-    { 
-      texture: "/Earth_imgFinal0.jpg", 
-      name: "Earth",
-      description: "The third planet from the Sun and the only known planet to harbor life. Earth has a diverse climate and is 71% covered by water.",
-      distance: "93 million miles from Sun",
-      diameter: "7,918 miles"
-    },
-    { 
-      texture: "/8k_jupiter.jpg", 
-      name: "Jupiter",
-      description: "The largest planet in our solar system. Jupiter is a gas giant with a Great Red Spot storm larger than Earth.",
-      distance: "484 million miles from Sun",
-      diameter: "86,881 miles"
-    },
-    { 
-      texture: "/8k_saturn.jpg", 
-      name: "Saturn",
-      description: "Famous for its prominent ring system. Saturn is a gas giant and the least dense planet in our solar system.",
-      distance: "886 million miles from Sun",
-      diameter: "72,367 miles"
-    },
+    [(radius + 1) * Math.cos(4 * angleStep), 0, (radius + 1) * Math.sin(4 * angleStep)], // Jupiter - slightly farther
+    [(radius + 1.5) * Math.cos(5 * angleStep), 0, (radius + 1.5) * Math.sin(5 * angleStep)], // Saturn - slightly farther
   ];
 
   const [isAnimating, setIsAnimating] = useState(true);
@@ -791,10 +368,10 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
   const [currentPlanetIndex, setCurrentPlanetIndex] = useState(0);
   const [hoveredPlanet, setHoveredPlanet] = useState(null);
   const [cameraDistance, setCameraDistance] = useState(5);
-  const [viewModeState, setViewModeState] = useState('individual');
-  const [cameraMode, setCameraMode] = useState('normal');
+  const [viewModeState, setViewModeState] = useState('overview'); // Changed default to overview
+  const [cameraMode, setCameraMode] = useState('overview'); // Changed default to overview
   const [dynamicPlanetPositions, setDynamicPlanetPositions] = useState(staticPlanetPositions);
-  const [eclipseMode, setEclipseMode] = useState(false);
+  const [showRahuKetu, setShowRahuKetu] = useState(false);
   const orbitControlsRef = useRef();
   
   // Camera mode configurations
@@ -805,46 +382,22 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
       position: (target, distance) => new THREE.Vector3(target[0], target[1], target[2] + distance),
       name: 'Normal View'
     },
-    wide: {
-      fov: 90,
-      distance: 8,
-      position: (target, distance) => new THREE.Vector3(target[0], target[1] + 2, target[2] + distance),
-      name: 'Wide Angle'
-    },
-    telephoto: {
-      fov: 30,
-      distance: 12,
-      position: (target, distance) => new THREE.Vector3(target[0], target[1], target[2] + distance),
-      name: 'Telephoto'
-    },
-    cinematic: {
-      fov: 45,
-      distance: 7,
-      position: (target, distance) => new THREE.Vector3(target[0] + 2, target[1] + 1, target[2] + distance - 2),
-      name: 'Cinematic'
-    },
     bird: {
-      fov: 75,
-      distance: 10,
-      position: (target, distance) => new THREE.Vector3(target[0], target[1] + distance, target[2]),
+      fov: 85, // Increased FOV for better circular view
+      distance: 16, // Increased from 12 to 16 to accommodate larger circle
+      position: (target, distance) => new THREE.Vector3(0, distance, 0), // Directly above center
       name: 'Bird\'s Eye'
     },
-    close: {
-      fov: 50,
-      distance: 3,
-      position: (target, distance) => new THREE.Vector3(target[0] + 1, target[1], target[2] + distance),
-      name: 'Close-up'
-    },
     overview: {
-      fov: 75,
-      distance: 35,
-      position: (target, distance) => new THREE.Vector3(0, 8, distance),
+      fov: 85, // Increased from 75 to 85 for wider view
+      distance: 25, // Increased from 20 to 25 for better clearance
+      position: (target, distance) => new THREE.Vector3(0, 10, distance), // Increased height from 6 to 10
       name: 'Solar System'
     },
     ein: {
-      fov: 60,
-      distance: 25,
-      position: (target, distance) => new THREE.Vector3(5, 12, distance),
+      fov: 70, // Increased from 60 to 70
+      distance: 22, // Increased from 18 to 22
+      position: (target, distance) => new THREE.Vector3(6, 12, distance), // Adjusted positions for better view
       name: 'Ein Overview'
     }
   };
@@ -856,37 +409,17 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
     }, 500);
   };
 
+  const handleExitRahuKetu = () => {
+    setShowRahuKetu(false);
+  };
+
   useEffect(() => {
     setGlowIntensity(1.8);
     setGlowCenter(new THREE.Vector3(0, 0.8, 0.6));
+    // Set initial view mode and camera mode to overview for better default view
+    setViewMode('overview');
     handleIntroComplete();
   }, []);
-
-  // Calculate dynamic orbital positions for planets around the Sun
-  const getPlanetPosition = (planetIndex, time) => {
-    if (planetIndex === 0) return [0, 0, 0]; // Sun stays at center
-    
-    // Orbital parameters for realistic motion with slower speeds and more gaps
-    const orbitalData = [
-      null, // Sun
-      { radius: 10, speed: 0.3, tilt: 0.1 }, // Mars - increased gap and slower
-      { radius: 7, speed: 0.2, tilt: 0.05 }, // Venus - slower
-      { radius: 5.5, speed: 0.3, tilt: 0.02 }, // Mercury - slower
-      { radius: 8.5, speed: 0.25, tilt: 0.0 }, // Earth - slower
-      { radius: 14, speed: 0.10, tilt: 0.3 }, // Jupiter - much slower, bigger gap
-      { radius: 18, speed: 0.17, tilt: 0.4 }, // Saturn - slower, bigger gap
-    ];
-    
-    const planet = orbitalData[planetIndex];
-    if (!planet) return [0, 0, 0];
-    
-    const angle = time * planet.speed;
-    const x = Math.cos(angle) * planet.radius;
-    const z = Math.sin(angle) * planet.radius;
-    const y = Math.sin(angle * 0.1) * planet.tilt; // Slight vertical oscillation
-    
-    return [x, y, z];
-  };
 
   useEffect(() => {
     const handleWheel = (event) => {
@@ -908,15 +441,18 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
         setCameraMode(prev => prev === 'overview' ? 'normal' : 'overview');
       }
       
-      // Camera mode cycling with 'C' key
       if (event.key === 'c' || event.key === 'C') {
+        if (showRahuKetu) {
+          // Let RahuKetuSimulation handle 'C' key when active
+          return;
+        }
+        
         const modes = Object.keys(cameraModes);
         setCameraMode(prev => {
           const currentIndex = modes.indexOf(prev);
           const nextIndex = (currentIndex + 1) % modes.length;
           const newMode = modes[nextIndex];
           
-          // Update view mode based on camera mode
           if (newMode === 'overview' || newMode === 'ein') {
             setViewModeState('overview');
             setViewMode('overview');
@@ -928,6 +464,10 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
           return newMode;
         });
       }
+      
+      if (event.key === 'r' || event.key === 'R') {
+        setShowRahuKetu(prev => !prev);
+      }
     };
 
     window.addEventListener('wheel', handleWheel, { passive: false });
@@ -936,7 +476,7 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
       window.removeEventListener('wheel', handleWheel);
       window.removeEventListener('keydown', handleKeyPress);
     };
-  }, [planetData.length, setCurrentPlanet, viewModeState, setViewMode]);
+  }, [planetData.length, setCurrentPlanet, viewModeState, setViewMode, showRahuKetu]);
 
   useFrame((state) => {
     // Update dynamic positions for overview mode
@@ -950,12 +490,10 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
     if (state.camera && orbitControlsRef.current) {
       const currentCameraMode = cameraModes[cameraMode];
       
-      // Apply camera FOV
       state.camera.fov = currentCameraMode.fov;
       state.camera.updateProjectionMatrix();
 
       if (viewModeState === 'overview') {
-        // Overview mode settings
         orbitControlsRef.current.target.set(0, 0, 0);
         setCameraDistance(currentCameraMode.distance);
         
@@ -963,32 +501,41 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
         state.camera.position.lerp(targetPos, 0.05);
         
       } else {
-        // Individual planet mode
-        let targetPosition = staticPlanetPositions[currentPlanetIndex];
+        // Use bird's eye positions when in bird camera mode
+        const positions = cameraMode === 'bird' ? getBirdEyePositions() : staticPlanetPositions;
+        let targetPosition = positions[currentPlanetIndex];
         
-        orbitControlsRef.current.target.set(
-          targetPosition[0],
-          targetPosition[1], 
-          targetPosition[2]
-        );
-        
-        if (!orbitControlsRef.current.enabled || 
-            (Math.abs(state.camera.position.x - targetPosition[0]) > 0.1 ||
-             Math.abs(state.camera.position.y - targetPosition[1]) > 0.1 ||
-             Math.abs(state.camera.position.z - (targetPosition[2] + currentCameraMode.distance)) > 0.1)) {
+        // For bird's eye view, always target the center when looking at individual planets
+        if (cameraMode === 'bird') {
+          orbitControlsRef.current.target.set(0, 0, 0);
+          setCameraDistance(currentCameraMode.distance);
           
-          // Adjust distance based on planet type and camera mode
-          const isMars = planetData[currentPlanetIndex].name === "Mars";
-          const isJupiter = planetData[currentPlanetIndex].name === "Jupiter";
-          let distance = currentCameraMode.distance;
-          
-          if (isMars) distance = Math.max(distance * 0.6, 2);
-          if (isJupiter) distance = Math.max(distance * 0.8, 3);
-          
-          setCameraDistance(distance);
-          
-          const targetPos = currentCameraMode.position(targetPosition, distance);
+          const targetPos = currentCameraMode.position([0, 0, 0], currentCameraMode.distance);
           state.camera.position.lerp(targetPos, 0.05);
+        } else {
+          orbitControlsRef.current.target.set(
+            targetPosition[0],
+            targetPosition[1], 
+            targetPosition[2]
+          );
+          
+          if (!orbitControlsRef.current.enabled || 
+              (Math.abs(state.camera.position.x - targetPosition[0]) > 0.1 ||
+               Math.abs(state.camera.position.y - targetPosition[1]) > 0.1 ||
+               Math.abs(state.camera.position.z - (targetPosition[2] + currentCameraMode.distance)) > 0.1)) {
+            
+            const isMars = planetData[currentPlanetIndex].name === "Mars";
+            const isJupiter = planetData[currentPlanetIndex].name === "Jupiter";
+            let distance = currentCameraMode.distance;
+            
+            if (isMars) distance = Math.max(distance * 0.6, 2);
+            if (isJupiter) distance = Math.max(distance * 0.8, 3);
+            
+            setCameraDistance(distance);
+            
+            const targetPos = currentCameraMode.position(targetPosition, distance);
+            state.camera.position.lerp(targetPos, 0.05);
+          }
         }
       }
     }
@@ -996,174 +543,269 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
 
   return (
     <>
-      <MilkyWay />
-      <Stars />
-      <ShootingStars />
-      <ambientLight intensity={2.5} />
-      <pointLight position={[10, 10, 10]} intensity={2} />
-      
-      {/* Planet Orbital Paths - only show in overview mode */}
-      {planetData.map((planet, index) => (
-        <PlanetOrbitPath 
-          key={`orbit-${index}-${planet.name}`}
-          planetIndex={index}
-          viewModeState={viewModeState}
-        />
-      ))}
-      
-      {planetData.map((planet, index) => {
-        // Calculate position based on view mode using stored positions
-        const position = viewModeState === 'overview' 
-          ? dynamicPlanetPositions[index]
-          : staticPlanetPositions[index];
-        
-        return (
-          <group key={`planet-${index}-${planet.name}`}>
-            <EarthModel
-              isAnimating={isAnimating}
-              glowIntensity={glowIntensity}
-              texturePath={planet.texture}
-              position={position}
-              planetInfo={planet}
-              onHover={setHoveredPlanet}
-              onHoverOut={() => setHoveredPlanet(null)}
-              viewModeState={viewModeState}
+      {!showRahuKetu && (
+        <>
+          <MilkyWay />
+          <NebulaBackground />
+          <Stars />
+          <ShootingStars />
+          <ambientLight intensity={2.5} />
+          <pointLight position={[10, 10, 10]} intensity={2} />
+          
+          {/* Planet Orbital Paths */}
+          {planetData.map((planet, index) => (
+            <PlanetOrbitPath 
+              key={`orbit-${index}-${planet.name}`}
               planetIndex={index}
-            />
-            
-            {/* Planet Axis Indicator - only show in overview mode */}
-            <PlanetAxis 
-              position={position}
-              planetIndex={index}
-              planetInfo={planet}
               viewModeState={viewModeState}
             />
+          ))}
+          
+          {planetData.map((planet, index) => {
+            let position;
             
-            {/* Planet Name Label */}
+            // Choose position based on view mode and camera mode
+            if (viewModeState === 'overview') {
+              position = dynamicPlanetPositions[index];
+            } else if (cameraMode === 'bird') {
+              position = getBirdEyePositions()[index];
+            } else {
+              position = staticPlanetPositions[index];
+            }
+            
+            return (
+              <group key={`planet-${index}-${planet.name}`}>
+                <EarthModel
+                  isAnimating={isAnimating}
+                  glowIntensity={glowIntensity}
+                  texturePath={planet.texture}
+                  position={position}
+                  planetInfo={planet}
+                  onHover={setHoveredPlanet}
+                  onHoverOut={() => setHoveredPlanet(null)}
+                  viewModeState={cameraMode === 'bird' ? 'individual' : viewModeState}
+                  planetIndex={index}
+                />
+                
+                <PlanetAxis 
+                  position={position}
+                  planetIndex={index}
+                  planetInfo={planet}
+                  viewModeState={cameraMode === 'bird' ? 'individual' : viewModeState}
+                />
+                
+                {/* Planet Name Label */}
+                <Html 
+                  position={[
+                    position[0],
+                    position[1] - 1.0,
+                    position[2]
+                  ]} 
+                  center
+                  distanceFactor={cameraMode === 'bird' ? 8 : (viewModeState === 'overview' ? 15 : 5)}
+                  occlude={true}
+                  transform
+                  sprite
+                  style={{ 
+                    pointerEvents: 'none'
+                  }}
+                >
+                  <div style={{
+                    background: 'rgba(0, 0, 0, 0.8)',
+                    color: 'white',
+                    padding: '6px 10px',
+                    borderRadius: '8px',
+                    fontSize: cameraMode === 'bird' ? '10px' : (viewModeState === 'overview' ? '8px' : '11px'),
+                    fontWeight: 'bold',
+                    border: '1px solid rgba(255, 255, 255, 0.3)',
+                    backdropFilter: 'blur(8px)',
+                    textAlign: 'center',
+                    whiteSpace: 'nowrap',
+                    boxShadow: '0 2px 10px rgba(0, 0, 0, 0.5)',
+                    minWidth: cameraMode === 'bird' ? '50px' : (viewModeState === 'overview' ? '40px' : '60px')
+                  }}>
+                    {planet.name}
+                  </div>
+                </Html>
+              </group>
+            );
+          })}
+          
+          {/* Moon orbiting Earth */}
+          <MoonOrbit 
+            earthPosition={viewModeState === 'overview' 
+              ? dynamicPlanetPositions[4]
+              : (cameraMode === 'bird' ? getBirdEyePositions()[4] : staticPlanetPositions[4])} 
+            onHover={setHoveredPlanet}
+            onHoverOut={() => setHoveredPlanet(null)}
+          />
+          
+          <SaturnRings position={viewModeState === 'overview' 
+            ? dynamicPlanetPositions[6]
+            : (cameraMode === 'bird' ? getBirdEyePositions()[6] : staticPlanetPositions[6])} />
+          
+          <OrbitControls 
+            ref={orbitControlsRef}
+            enableZoom={viewModeState === 'overview' || cameraMode === 'bird' || cameraMode === 'wide'} 
+            enableRotate={true} 
+            enablePan={viewModeState === 'overview' || cameraMode === 'bird'}
+            minDistance={cameraMode === 'bird' ? 12 : (viewModeState === 'overview' ? 12 : 1)} // Increased bird min distance from 8 to 12
+            maxDistance={cameraMode === 'bird' ? 25 : (viewModeState === 'overview' ? 50 : 15)} // Increased bird max distance from 20 to 25
+            enableDamping={true}
+            dampingFactor={0.05}
+            rotateSpeed={cameraMode === 'cinematic' ? 0.3 : 0.5}
+            zoomSpeed={cameraMode === 'telephoto' ? 0.5 : 1.2}
+            target={viewModeState === 'overview' || cameraMode === 'bird' ? [0, 0, 0] : staticPlanetPositions[currentPlanetIndex]}
+          />
+          
+          {/* Planet Hover Information Display - Only show in individual view mode and not in bird's eye view */}
+          {hoveredPlanet && viewModeState === 'individual' && cameraMode !== 'bird' && (
             <Html 
               position={[
-                position[0],
-                position[1] - 1.0,
-                position[2]
+                // Positioning for normal view only
+                hoveredPlanet.position ? hoveredPlanet.position[0] + 3.0 : 0,
+                hoveredPlanet.position ? hoveredPlanet.position[1] + 0.5 : 0,
+                hoveredPlanet.position ? hoveredPlanet.position[2] : 0
               ]} 
               center
-              distanceFactor={viewModeState === 'overview' ? 15 : 5} // Increased distance factor for overview
-              occlude={true}
+              distanceFactor={cameraModes[cameraMode].fov * 0.10}
+              occlude={false}
               transform
               sprite
-              style={{ 
-                pointerEvents: 'none'
-              }}
+              style={{ pointerEvents: 'none' }}
             >
               <div style={{
-                background: 'rgba(0, 0, 0, 0.8)',
+                background: 'rgba(0, 0, 0, 0.95)',
                 color: 'white',
-                padding: '6px 10px',
+                padding: '10px 14px',
                 borderRadius: '8px',
-                fontSize: viewModeState === 'overview' ? '8px' : '11px', // Smaller font for overview
-                fontWeight: 'bold',
-                border: '1px solid rgba(255, 255, 255, 0.3)',
-                backdropFilter: 'blur(8px)',
-                textAlign: 'center',
-                whiteSpace: 'nowrap',
-                boxShadow: '0 2px 10px rgba(0, 0, 0, 0.5)',
-                minWidth: viewModeState === 'overview' ? '40px' : '60px' // Smaller min width for overview
+                fontSize: '10px',
+                border: '2px solid rgba(255, 255, 255, 0.5)',
+                backdropFilter: 'blur(10px)',
+                maxWidth: '200px',
+                minWidth: '160px',
+                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.9)',
+                transform: `scale(${Math.min(0.9, Math.max(0.6, cameraModes[cameraMode].fov / 65))})`,
               }}>
-                {planet.name}
+                <div style={{ 
+                  fontSize: '12px', 
+                  fontWeight: 'bold', 
+                  marginBottom: '6px',
+                  color: '#66ccff',
+                  borderBottom: '1px solid rgba(255, 255, 255, 0.3)',
+                  paddingBottom: '4px'
+                }}>
+                  {hoveredPlanet.name}
+                </div>
+                <div style={{ 
+                  fontSize: '9px', 
+                  lineHeight: '1.3', 
+                  marginBottom: '6px',
+                  opacity: 0.95
+                }}>
+                  {hoveredPlanet.description}
+                </div>
+                <div style={{ 
+                  fontSize: '8px', 
+                  opacity: 0.8,
+                  borderTop: '1px solid rgba(255, 255, 255, 0.2)',
+                  paddingTop: '4px',
+                  marginTop: '6px'
+                }}>
+                  <div style={{ marginBottom: '2px' }}>
+                    <strong>Distance:</strong> {hoveredPlanet.distance}
+                  </div>
+                  <div>
+                    <strong>Diameter:</strong> {hoveredPlanet.diameter}
+                  </div>
+                </div>
               </div>
             </Html>
-          </group>
-        );
-      })}
-      
-      {/* Moon orbiting Earth - update position dynamically */}
-      <MoonOrbit 
-        earthPosition={viewModeState === 'overview' 
-          ? dynamicPlanetPositions[4]
-          : staticPlanetPositions[4]} 
-        onHover={setHoveredPlanet}
-        onHoverOut={() => setHoveredPlanet(null)}
-      />
-      
-      <SaturnRings position={viewModeState === 'overview' 
-        ? dynamicPlanetPositions[6]
-        : staticPlanetPositions[6]} />
-      
-      <OrbitControls 
-        ref={orbitControlsRef}
-        enableZoom={viewModeState === 'overview' || cameraMode === 'bird' || cameraMode === 'wide'} 
-        enableRotate={true} 
-        enablePan={viewModeState === 'overview'}
-        minDistance={viewModeState === 'overview' ? 10 : 1}
-        maxDistance={viewModeState === 'overview' ? 60 : 15}
-        enableDamping={true}
-        dampingFactor={0.05}
-        rotateSpeed={cameraMode === 'cinematic' ? 0.3 : 0.5}
-        zoomSpeed={cameraMode === 'telephoto' ? 0.5 : 1.2}
-        target={viewModeState === 'overview' ? [0, 0, 0] : staticPlanetPositions[currentPlanetIndex]}
-      />
-      
-      {/* Camera Mode Instructions */}
-      <Html position={[-10, 8, 0]} style={{ pointerEvents: 'none' }}>
-        <div style={{
-          background: 'rgba(0, 0, 0, 0.7)',
-          color: 'white',
-          padding: '8px 12px',
-          borderRadius: '8px',
-          fontSize: '11px',
-          border: '2px solid rgba(255, 255, 255, 0.3)',
-          width: '220px',
-          textAlign: 'center',
-        }}>
-          <div style={{ marginBottom: '6px' }}>
-            <strong>Controls:</strong>
-          </div>
-          <div style={{ fontSize: '10px', opacity: 0.9, marginBottom: '4px' }}>
-            Press 'V' to toggle view mode
-          </div>
-          <div style={{ fontSize: '10px', opacity: 0.9, marginBottom: '6px' }}>
-            Press 'C' to cycle camera modes
-          </div>
-          <div style={{ 
-            fontSize: '12px', 
-            color: '#66ccff', 
-            fontWeight: 'bold',
-            borderTop: '1px solid rgba(255, 255, 255, 0.2)',
-            paddingTop: '6px'
-          }}>
-            {cameraModes[cameraMode].name}
-          </div>
-          <div style={{ fontSize: '9px', opacity: 0.7, marginTop: '2px' }}>
-            FOV: {cameraModes[cameraMode].fov}°
-          </div>
-          {viewModeState === 'individual' && (
-            <div style={{ fontSize: '9px', opacity: 0.8, marginTop: '4px' }}>
-              Scroll to navigate planets
-            </div>
           )}
-        </div>
-      </Html>
+          
+          {/* Camera Mode Instructions */}
+          <Html position={[-10, 14, 0]} style={{ pointerEvents: 'none' }}>
+            <div style={{
+              background: 'rgba(0, 0, 0, 0.7)',
+              color: 'white',
+              padding: '8px 12px',
+              borderRadius: '8px',
+              fontSize: '11px',
+              border: '2px solid rgba(255, 255, 255, 0.3)',
+              width: '220px',
+              textAlign: 'center',
+            }}>
+              <div style={{ marginBottom: '4px' }}>
+                <strong>Controls:</strong>
+              </div>
+              {!showRahuKetu && (
+                <>
+                  <div style={{ fontSize: '10px', opacity: 0.9, marginBottom: '4px' }}>
+                    Press 'V' to toggle view mode
+                  </div>
+                  <div style={{ fontSize: '10px', opacity: 0.9, marginBottom: '6px' }}>
+                    Press 'C' to cycle camera modes
+                  </div>
+                </>
+              )}
+              <div style={{ fontSize: '10px', opacity: 0.9, marginBottom: '6px' }}>
+                Press 'R' for Rahu-Ketu simulation
+              </div>
+              {!showRahuKetu && (
+                <>
+                  <div style={{ 
+                    fontSize: '12px', 
+                    color: '#66ccff', 
+                    fontWeight: 'bold',
+                    borderTop: '1px solid rgba(255, 255, 255, 0.2)',
+                    paddingTop: '6px'
+                  }}>
+                    {cameraModes[cameraMode].name}
+                  </div>
+                  <div style={{ fontSize: '9px', opacity: 0.7, marginTop: '2px' }}>
+                    FOV: {cameraModes[cameraMode].fov}°
+                  </div>
+                </>
+              )}
+              {showRahuKetu && (
+                <div style={{ 
+                  fontSize: '11px', 
+                  color: '#ffaa00', 
+                  fontWeight: 'bold',
+                  borderTop: '1px solid rgba(255, 255, 255, 0.2)',
+                  paddingTop: '6px'
+                }}>
+                  Rahu-Ketu Mode Active
+                </div>
+              )}
+            </div>
+          </Html>
 
-      {/* Camera Mode Indicator */}
-      <Html position={[10, 8, 0]} style={{ pointerEvents: 'none' }}>
-        <div style={{
-          background: 'rgba(0, 0, 0, 0.8)',
-          color: 'white',
-          padding: '6px 10px',
-          borderRadius: '6px',
-          fontSize: '10px',
-          border: '1px solid rgba(255, 255, 255, 0.3)',
-          minWidth: '100px',
-          textAlign: 'center',
-        }}>
-          <div style={{ color: '#66ccff', fontWeight: 'bold' }}>
-            Camera Mode
-          </div>
-          <div style={{ fontSize: '9px', opacity: 0.8 }}>
-            {cameraModes[cameraMode].name}
-          </div>
-        </div>
-      </Html>
+          {/* Camera Mode Indicator */}
+          <Html position={[10, 8, 0]} style={{ pointerEvents: 'none' }}>
+            <div style={{
+              background: 'rgba(0, 0, 0, 0.8)',
+              color: 'white',
+              padding: '6px 10px',
+              borderRadius: '6px',
+              fontSize: '10px',
+              border: '1px solid rgba(255, 255, 255, 0.3)',
+              minWidth: '100px',
+              textAlign: 'center',
+            }}>
+              <div style={{ color: '#66ccff', fontWeight: 'bold' }}>
+                Camera Mode
+              </div>
+              <div style={{ fontSize: '9px', opacity: 0.8 }}>
+                {cameraModes[cameraMode].name}
+              </div>
+            </div>
+          </Html>
+        </>
+      )}
+      
+      {/* Rahu-Ketu Simulation with exit functionality */}
+      <RahuKetuSimulation isActive={showRahuKetu} onExit={handleExitRahuKetu} />
     </>
   );
 }
@@ -1171,7 +813,7 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
 export default function Global() {
   const [introComplete, setIntroComplete] = useState(false);
   const [currentPlanet, setCurrentPlanet] = useState("Sun");
-  const [viewMode, setViewMode] = useState('individual');
+  const [viewMode, setViewMode] = useState('overview'); // Changed default to overview
 
   return (
     <section
@@ -1182,7 +824,7 @@ export default function Global() {
       >
         <Canvas
           className="w-full h-screen"
-          camera={{ position: [0, 0, 5], fov: 60 }}
+          camera={{ position: [0, 10, 25], fov: 85 }} // Updated initial camera position and FOV for better overview
         >
           <Scene 
             onIntroComplete={() => setIntroComplete(true)} 
@@ -1212,7 +854,7 @@ export default function Global() {
           <div style={{ fontSize: '18px' }}>
             {viewMode === 'overview' ? 'Solar System View' : currentPlanet}
           </div>
-          <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>
+          <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '8px' }}>
             Press 'C' for camera modes • 'V' for view toggle
           </div>
         </div>
