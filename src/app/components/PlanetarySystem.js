@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useMemo, useCallback } from "react";
 import { useFrame, extend } from "@react-three/fiber";
 import { useTexture, shaderMaterial, Html } from "@react-three/drei";
 import * as THREE from "three";
@@ -244,95 +244,268 @@ export function SaturnRings({ position }) {
   );
 }
 
-export function EarthModel({ isAnimating, glowCenter, glowIntensity, texturePath, position, planetInfo, onHover, onHoverOut, viewModeState, planetIndex }) {
+// SSR-safe texture loading hook with performance optimizations
+const useOptimizedTexture = (texturePath, priority = false) => {
+  const [texture, setTexture] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(false);
+  
+  useEffect(() => {
+    if (!texturePath || typeof window === 'undefined') return;
+    
+    const isMobile = window.innerWidth <= 768 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const loader = new THREE.TextureLoader();
+    
+    // Progressive texture path resolution
+    const getTexturePaths = (originalPath) => {
+      const paths = [originalPath];
+      
+      if (isMobile) {
+        // Try 2k version first for mobile
+        if (originalPath.includes('/8k_')) {
+          paths.unshift(originalPath.replace('/8k_', '/2k_'));
+        }
+        if (originalPath.includes('/4k_')) {
+          paths.unshift(originalPath.replace('/4k_', '/2k_'));
+        }
+      }
+      
+      return paths;
+    };
+    
+    const loadTexture = async () => {
+      const paths = getTexturePaths(texturePath);
+      
+      for (let i = 0; i < paths.length; i++) {
+        try {
+          const loadedTexture = await new Promise((resolve, reject) => {
+            loader.load(paths[i], resolve, undefined, reject);
+          });
+          
+          // Optimize texture settings for performance
+          loadedTexture.generateMipmaps = !isMobile;
+          loadedTexture.minFilter = isMobile ? THREE.LinearFilter : THREE.LinearMipmapLinearFilter;
+          loadedTexture.magFilter = THREE.LinearFilter;
+          loadedTexture.wrapS = THREE.RepeatWrapping;
+          loadedTexture.wrapT = THREE.RepeatWrapping;
+          
+          if (isMobile && loadedTexture.image) {
+            loadedTexture.format = THREE.RGBFormat;
+          }
+          
+          setTexture(loadedTexture);
+          setIsLoading(false);
+          setError(false);
+          return;
+        } catch (err) {
+          console.warn(`Failed to load texture: ${paths[i]}`, err);
+          if (i === paths.length - 1) {
+            setError(true);
+            setIsLoading(false);
+          }
+        }
+      }
+    };
+    
+    if (priority) {
+      loadTexture();
+    } else {
+      // Stagger non-priority texture loading
+      const delay = Math.random() * 1000 + 200; // 200-1200ms delay
+      setTimeout(loadTexture, delay);
+    }
+    
+    return () => {
+      if (texture) {
+        texture.dispose();
+      }
+    };
+  }, [texturePath, priority]);
+  
+  return { texture, isLoading, error };
+};
+
+// SSR-safe planet data function - reorder to match actual solar system
+const createPlanetData = () => [
+  { 
+    texture: "/8k_sun.jpg", 
+    name: "Sun",
+    description: "The star at the center of our solar system. It's a nearly perfect sphere of hot plasma and provides the energy that sustains life on Earth.",
+    distance: "Center of Solar System",
+    diameter: "864,938 miles",
+    priority: true // Load first
+  },
+  { 
+    texture: "/8k_mercury.jpg", 
+    name: "Mercury",
+    description: "The smallest planet and closest to the Sun. Mercury has extreme temperature variations from -290°F to 800°F.",
+    distance: "36 million miles from Sun",
+    diameter: "3,032 miles"
+  },
+  { 
+    texture: "/8k_venus_surface.jpg", 
+    name: "Venus",
+    description: "The hottest planet in our solar system with surface temperatures of 900°F. Venus rotates backwards compared to most planets.",
+    distance: "67 million miles from Sun",
+    diameter: "7,521 miles"
+  },
+  { 
+    texture: "/Earth_imgFinal0.jpg", 
+    name: "Earth",
+    description: "The third planet from the Sun and the only known planet to harbor life. Earth has a diverse climate and is 71% covered by water.",
+    distance: "93 million miles from Sun",
+    diameter: "7,918 miles",
+    priority: true // Load second
+  },
+  { 
+    texture: "/8k_mars.jpg", 
+    name: "Mars",
+    description: "Known as the Red Planet due to iron oxide on its surface. Mars has the largest volcano and canyon in the solar system.",
+    distance: "142 million miles from Sun",
+    diameter: "4,212 miles"
+  },
+  { 
+    texture: "/8k_jupiter.jpg", 
+    name: "Jupiter",
+    description: "The largest planet in our solar system. Jupiter is a gas giant with a Great Red Spot storm larger than Earth.",
+    distance: "484 million miles from Sun",
+    diameter: "86,881 miles"
+  },
+  { 
+    texture: "/8k_saturn.jpg", 
+    name: "Saturn",
+    description: "Famous for its prominent ring system. Saturn is a gas giant and the least dense planet in our solar system.",
+    distance: "886 million miles from Sun",
+    diameter: "72,367 miles"
+  },
+];
+
+// SSR-safe hook to get planet data
+export const usePlanetData = () => {
+  const [planetData, setPlanetData] = useState([]);
+  
+  useEffect(() => {
+    setPlanetData(createPlanetData());
+  }, []);
+  
+  return planetData;
+};
+
+// Export planet data getter for SSR safety
+export const planetData = typeof window !== 'undefined' ? createPlanetData() : [];
+
+export function EarthModel({ isAnimating, glowCenter, glowIntensity, texturePath, position, planetInfo, onHover, onHoverOut, viewModeState, planetIndex, isMobile = false }) {
   const earthRef = useRef();
   const materialRef = useRef();
-  const texture = useTexture(texturePath);
+  const { texture, isLoading, error } = useOptimizedTexture(texturePath, planetInfo?.priority);
+
+  // Memoize rotation speeds for performance
+  const rotationSpeed = useMemo(() => {
+    const rotationSpeeds = [
+      isMobile ? 0.025 : 0.02, // Sun
+      isMobile ? 0.035 : 0.03, // Mars
+      isMobile ? -0.055 : -0.05, // Venus (retrograde)
+      isMobile ? 0.065 : 0.06, // Mercury
+      isMobile ? 0.045 : 0.04, // Earth
+      isMobile ? 0.075 : 0.07, // Jupiter
+      isMobile ? 0.065 : 0.06, // Saturn
+    ];
+    return rotationSpeeds[planetIndex] || 0.1;
+  }, [planetIndex, isMobile]);
 
   useFrame((state, delta) => {
     if (earthRef.current) {
-      // Planetary rotation speeds (slower for all planets)
-      const rotationSpeeds = [
-        0.02, // Sun - slower
-        0.03, // Mars - slower
-        -0.05, // Venus (retrograde) - slower
-        0.06, // Mercury - slower
-        0.04, // Earth - slower
-        0.07, // Jupiter - slower
-        0.06, // Saturn - slower
-      ];
-
-      // Always rotate on axis
-      earthRef.current.rotation.y += delta * (rotationSpeeds[planetIndex] || 0.1);
+      earthRef.current.rotation.y += delta * rotationSpeed;
       
-      if (materialRef.current) {
-        // Update shader uniforms for lighting
+      if (materialRef.current && texture) {
         materialRef.current.time = state.clock.elapsedTime;
-        materialRef.current.sunPosition = new THREE.Vector3(0, 0, 0); // Sun is always at origin
+        materialRef.current.sunPosition = new THREE.Vector3(0, 0, 0);
         materialRef.current.planetPosition = new THREE.Vector3(position[0], position[1], position[2]);
       }
     }
   });
 
-  // Enhanced Sun rendering with special effects
-  if (planetInfo.name === "Sun") {
+  // Show optimized loading placeholder
+  if (isLoading || error || !texture) {
+    return (
+      <mesh
+        position={position}
+        scale={isMobile ? 0.6 : 0.7}
+        onPointerOver={() => onHover && onHover({...planetInfo, position})}
+        onPointerOut={() => onHoverOut && onHoverOut()}
+      >
+        <sphereGeometry args={[1, isMobile ? 8 : 12, isMobile ? 8 : 12]} />
+        <meshBasicMaterial 
+          color={error ? 0xff4444 : 0x444444} 
+          wireframe={isLoading} 
+          transparent={true}
+          opacity={0.6}
+        />
+      </mesh>
+    );
+  }
+
+  // Enhanced Sun rendering with mobile optimization
+  if (planetInfo?.name === "Sun") {
     return (
       <group position={position}>
-        {/* Main Sun mesh */}
         <mesh
           ref={earthRef}
-          scale={1.2}
+          scale={isMobile ? 1.0 : 1.2}
           onPointerOver={() => onHover && onHover({...planetInfo, position})}
           onPointerOut={() => onHoverOut && onHoverOut()}
         >
-          <sphereGeometry args={[1, 64, 64]} />
+          <sphereGeometry args={[1, isMobile ? 20 : 64, isMobile ? 20 : 64]} />
           <sunMaterial
             ref={materialRef}
             map={texture}
             time={0}
             viewVector={new THREE.Vector3()}
-            glowIntensity={4.0}
+            glowIntensity={isMobile ? 3.0 : 4.0}
             shadowIntensity={0.2}
           />
         </mesh>
         
-        {/* Enhanced lighting for Sun */}
+        {/* Mobile-optimized lighting */}
         <pointLight 
           position={[0, 0, 0]} 
-          intensity={6} 
+          intensity={isMobile ? 4 : 6} 
           color={0xffaa00} 
           decay={1.5}
-          distance={50}
+          distance={isMobile ? 35 : 50}
         />
-        <pointLight 
-          position={[0, 0, 0]} 
-          intensity={3} 
-          color={0xff6600} 
-          decay={1}
-          distance={30}
-        />
+        {!isMobile && (
+          <pointLight 
+            position={[0, 0, 0]} 
+            intensity={3} 
+            color={0xff6600} 
+            decay={1}
+            distance={30}
+          />
+        )}
         
-        {/* Sun corona glow effect */}
-        <mesh scale={1.8}>
-          <sphereGeometry args={[1, 32, 32]} />
+        {/* Mobile-optimized corona effects */}
+        <mesh scale={isMobile ? 1.4 : 1.8}>
+          <sphereGeometry args={[1, isMobile ? 8 : 32, isMobile ? 8 : 32]} />
           <meshBasicMaterial
             color={0xffaa00}
             transparent={true}
-            opacity={0.1}
+            opacity={isMobile ? 0.05 : 0.1}
             side={THREE.BackSide}
           />
         </mesh>
         
-        {/* Outer glow ring */}
-        <mesh scale={2.2}>
-          <sphereGeometry args={[1, 24, 24]} />
-          <meshBasicMaterial
-            color={0xff4400}
-            transparent={true}
-            opacity={0.05}
-            side={THREE.BackSide}
-          />
-        </mesh>
+        {!isMobile && (
+          <mesh scale={2.2}>
+            <sphereGeometry args={[1, 12, 12]} />
+            <meshBasicMaterial
+              color={0xff4400}
+              transparent={true}
+              opacity={0.04}
+              side={THREE.BackSide}
+            />
+          </mesh>
+        )}
       </group>
     );
   }
@@ -340,86 +513,150 @@ export function EarthModel({ isAnimating, glowCenter, glowIntensity, texturePath
   return (
     <mesh
       ref={earthRef}
-      scale={0.8}
+      scale={isMobile ? 0.65 : 0.8}
       position={position}
       onPointerOver={() => onHover && onHover({...planetInfo, position})}
       onPointerOut={() => onHoverOut && onHoverOut()}
     >
-      <sphereGeometry args={[1, 32, 32]} />
+      <sphereGeometry args={[1, isMobile ? 16 : 32, isMobile ? 16 : 32]} />
       <planetMaterial
         ref={materialRef}
         map={texture}
         time={0}
         sunPosition={new THREE.Vector3(0, 0, 0)}
         planetPosition={new THREE.Vector3(position[0], position[1], position[2])}
-        lightIntensity={1.2}
+        lightIntensity={isMobile ? 1.0 : 1.2}
         ambientStrength={0.25}
       />
     </mesh>
   );
 }
 
-export function MoonOrbit({ earthPosition, onHover, onHoverOut }) {
+export function MoonOrbit({ earthPosition, onHover, onHoverOut, isMobile = false }) {
   const moonRef = useRef();
   const materialRef = useRef();
+  const orbitGroupRef = useRef();
   
-  const texture = useTexture("/8k_moon.jpg");
-  const moonOrbitRadius = 2;
+  const { texture, isLoading } = useOptimizedTexture("/8k_moon.jpg", false);
+  const moonOrbitRadius = isMobile ? 1.6 : 2;
 
-  const moonInfo = {
+  const moonInfo = useMemo(() => ({
     name: "Moon",
     description: "Earth's only natural satellite. The Moon influences Earth's tides and has been a subject of human exploration. Rules Cancer in astrology.",
     distance: "238,855 miles from Earth",
     diameter: "2,159 miles"
-  };
+  }), []);
 
   useFrame((state, delta) => {
-    if (moonRef.current) {
-      const time = state.clock.elapsedTime;
-      // Moon orbits Earth every 10 seconds
-      const moonX = earthPosition[0] + Math.cos(time * 0.6) * moonOrbitRadius;
-      const moonY = earthPosition[1] + 0.3; // Position Moon above Earth's plane
-      const moonZ = earthPosition[2] + Math.sin(time * 0.6) * moonOrbitRadius;
+    if (orbitGroupRef.current && moonRef.current && earthPosition) {
+      // Update the orbit group position to follow Earth
+      orbitGroupRef.current.position.set(earthPosition[0], earthPosition[1], earthPosition[2]);
       
-      moonRef.current.position.set(moonX, moonY, moonZ);
-      moonRef.current.rotation.y += delta * 0.05;
+      // Rotate the orbit group to make Moon orbit around Earth
+      const moonOrbitSpeed = 0.6; // Moon orbital speed around Earth
+      orbitGroupRef.current.rotation.y += delta * moonOrbitSpeed;
       
-      if (materialRef.current) {
-        // Update shader uniforms for lighting
+      // Rotate Moon on its own axis (tidally locked but still rotating)
+      moonRef.current.rotation.y += delta * moonOrbitSpeed; // Same as orbital period (tidally locked)
+      
+      if (materialRef.current && texture) {
         materialRef.current.time = state.clock.elapsedTime;
         materialRef.current.sunPosition = new THREE.Vector3(0, 0, 0);
-        materialRef.current.planetPosition = new THREE.Vector3(moonX, moonY, moonZ);
+        
+        // Get Moon's world position for lighting calculations
+        const moonWorldPosition = new THREE.Vector3();
+        moonRef.current.getWorldPosition(moonWorldPosition);
+        materialRef.current.planetPosition = moonWorldPosition;
       }
     }
   });
 
+  // Don't render if Earth position is not available
+  if (!earthPosition || earthPosition.length !== 3) {
+    return null;
+  }
+
+  if (isLoading || !texture) {
+    return (
+      <group ref={orbitGroupRef}>
+        <mesh 
+          ref={moonRef} 
+          position={[moonOrbitRadius, 0.3, 0]}
+          scale={isMobile ? 0.15 : 0.2}
+        >
+          <sphereGeometry args={[1, 8, 8]} />
+          <meshBasicMaterial color={0x666666} wireframe={true} />
+        </mesh>
+      </group>
+    );
+  }
+
   return (
-    <mesh 
-      ref={moonRef} 
-      scale={0.3}
-      onPointerOver={() => {
-        const currentPosition = [
-          moonRef.current?.position.x || 0, 
-          moonRef.current?.position.y || 0, 
-          moonRef.current?.position.z || 0
-        ];
-        onHover({...moonInfo, position: currentPosition});
-      }}
-      onPointerOut={() => onHoverOut()}
-    >
-      <sphereGeometry args={[1, 32, 32]} />
-      <planetMaterial
-        ref={materialRef}
-        map={texture}
-        time={0}
-        sunPosition={new THREE.Vector3(0, 0, 0)}
-        planetPosition={new THREE.Vector3(0, 0, 0)}
-        lightIntensity={0.8}
-        ambientStrength={0.2}
-      />
-    </mesh>
+    <group ref={orbitGroupRef}>
+      <mesh 
+        ref={moonRef} 
+        position={[moonOrbitRadius, 0.3, 0]} // Position relative to Earth
+        scale={isMobile ? 0.2 : 0.3}
+        onPointerOver={() => {
+          // Get world position for hover info
+          const worldPosition = new THREE.Vector3();
+          moonRef.current.getWorldPosition(worldPosition);
+          const currentPosition = [worldPosition.x, worldPosition.y, worldPosition.z];
+          onHover({...moonInfo, position: currentPosition});
+        }}
+        onPointerOut={() => onHoverOut()}
+      >
+        <sphereGeometry args={[1, isMobile ? 12 : 32, isMobile ? 12 : 32]} />
+        <planetMaterial
+          ref={materialRef}
+          map={texture}
+          time={0}
+          sunPosition={new THREE.Vector3(0, 0, 0)}
+          planetPosition={new THREE.Vector3(0, 0, 0)}
+          lightIntensity={0.8}
+          ambientStrength={0.2}
+        />
+      </mesh>
+      
+      {/* Optional: Add a subtle orbit path visualization */}
+      <mesh rotation={[Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[moonOrbitRadius - 0.02, moonOrbitRadius + 0.02, 64]} />
+        <meshBasicMaterial
+          color={0x888888}
+          transparent={true}
+          opacity={0.1}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+    </group>
   );
 }
+
+// Calculate dynamic orbital positions for planets around the Sun - updated for correct planet order
+export const getPlanetPosition = (planetIndex, time) => {
+  if (planetIndex === 0) return [0, 0, 0]; // Sun stays at center
+  
+  // Orbital parameters for realistic motion with compacted spacing - updated order
+  const orbitalData = [
+    null, // Sun
+    { radius: 3.5, speed: 0.4, tilt: 0.02 }, // Mercury - closest and fastest
+    { radius: 4.5, speed: 0.3, tilt: 0.05 }, // Venus
+    { radius: 5.5, speed: 0.25, tilt: 0.0 }, // Earth
+    { radius: 6.5, speed: 0.2, tilt: 0.1 }, // Mars
+    { radius: 8.5, speed: 0.12, tilt: 0.3 }, // Jupiter
+    { radius: 10, speed: 0.08, tilt: 0.4 }, // Saturn
+  ];
+  
+  const planet = orbitalData[planetIndex];
+  if (!planet) return [0, 0, 0];
+  
+  const angle = time * planet.speed;
+  const x = Math.cos(angle) * planet.radius;
+  const z = Math.sin(angle) * planet.radius;
+  const y = Math.sin(angle * 0.1) * planet.tilt; // Slight vertical oscillation
+  
+  return [x, y, z];
+};
 
 export function PlanetOrbitPath({ planetIndex, viewModeState }) {
   // Don't show orbit for the Sun or if not in overview mode
@@ -427,15 +664,15 @@ export function PlanetOrbitPath({ planetIndex, viewModeState }) {
     return null;
   }
 
-  // Orbital radii matching the dynamic positions - compacted
+  // Orbital radii matching the dynamic positions - updated order
   const orbitalRadii = [
     null, // Sun
-    6, // Mars - moved closer
-    4.5, // Venus - moved closer
-    3.5, // Mercury - moved closer
-    5.5, // Earth - moved closer
-    7.5, // Jupiter - moved closer
-    9, // Saturn - moved closer
+    3.5, // Mercury
+    4.5, // Venus
+    5.5, // Earth
+    6.5, // Mars
+    8.5, // Jupiter
+    10, // Saturn
   ];
 
   const radius = orbitalRadii[planetIndex];
@@ -525,81 +762,3 @@ export function PlanetAxis({ position, planetIndex, planetInfo, viewModeState })
     </group>
   );
 }
-
-export const planetData = [
-  { 
-    texture: "/8k_sun.jpg", 
-    name: "Sun",
-    description: "The star at the center of our solar system. It's a nearly perfect sphere of hot plasma and provides the energy that sustains life on Earth.",
-    distance: "Center of Solar System",
-    diameter: "864,938 miles"
-  },
-  { 
-    texture: "/8k_mars.jpg", 
-    name: "Mars",
-    description: "Known as the Red Planet due to iron oxide on its surface. Mars has the largest volcano and canyon in the solar system.",
-    distance: "142 million miles from Sun",
-    diameter: "4,212 miles"
-  },
-  { 
-    texture: "/8k_venus_surface.jpg", 
-    name: "Venus",
-    description: "The hottest planet in our solar system with surface temperatures of 900°F. Venus rotates backwards compared to most planets.",
-    distance: "67 million miles from Sun",
-    diameter: "7,521 miles"
-  },
-  { 
-    texture: "/8k_mercury.jpg", 
-    name: "Mercury",
-    description: "The smallest planet and closest to the Sun. Mercury has extreme temperature variations from -290°F to 800°F.",
-    distance: "36 million miles from Sun",
-    diameter: "3,032 miles"
-  },
-  { 
-    texture: "/Earth_imgFinal0.jpg", 
-    name: "Earth",
-    description: "The third planet from the Sun and the only known planet to harbor life. Earth has a diverse climate and is 71% covered by water.",
-    distance: "93 million miles from Sun",
-    diameter: "7,918 miles"
-  },
-  { 
-    texture: "/8k_jupiter.jpg", 
-    name: "Jupiter",
-    description: "The largest planet in our solar system. Jupiter is a gas giant with a Great Red Spot storm larger than Earth.",
-    distance: "484 million miles from Sun",
-    diameter: "86,881 miles"
-  },
-  { 
-    texture: "/8k_saturn.jpg", 
-    name: "Saturn",
-    description: "Famous for its prominent ring system. Saturn is a gas giant and the least dense planet in our solar system.",
-    distance: "886 million miles from Sun",
-    diameter: "72,367 miles"
-  },
-];
-
-// Calculate dynamic orbital positions for planets around the Sun - compacted spacing
-export const getPlanetPosition = (planetIndex, time) => {
-  if (planetIndex === 0) return [0, 0, 0]; // Sun stays at center
-  
-  // Orbital parameters for realistic motion with compacted spacing
-  const orbitalData = [
-    null, // Sun
-    { radius: 6, speed: 0.3, tilt: 0.1 }, // Mars - closer
-    { radius: 4.5, speed: 0.2, tilt: 0.05 }, // Venus - closer
-    { radius: 3.5, speed: 0.3, tilt: 0.02 }, // Mercury - closer
-    { radius: 5.5, speed: 0.25, tilt: 0.0 }, // Earth - closer
-    { radius: 7.5, speed: 0.10, tilt: 0.3 }, // Jupiter - closer
-    { radius: 9, speed: 0.17, tilt: 0.4 }, // Saturn - closer
-  ];
-  
-  const planet = orbitalData[planetIndex];
-  if (!planet) return [0, 0, 0];
-  
-  const angle = time * planet.speed;
-  const x = Math.cos(angle) * planet.radius;
-  const z = Math.sin(angle) * planet.radius;
-  const y = Math.sin(angle * 0.1) * planet.tilt; // Slight vertical oscillation
-  
-  return [x, y, z];
-};

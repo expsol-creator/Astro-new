@@ -5,7 +5,7 @@ import { useFrame } from "@react-three/fiber";
 import { Html, Text } from "@react-three/drei";
 import * as THREE from "three";
 
-function RahuKetuSimulation({ isActive, onExit }) {
+function RahuKetuSimulation({ isActive, onExit, isMobile = false }) {
   const moonRef = useRef();
   const moonOrbitRef = useRef();
   const rahuKetuAxisRef = useRef();
@@ -13,11 +13,11 @@ function RahuKetuSimulation({ isActive, onExit }) {
   const [currentTime, setCurrentTime] = useState(0);
   const [cameraView, setCameraView] = useState('perspective'); // 'topDown', 'perspective', 'sideProfile'
   
-  // Orbital parameters
+  // Mobile-optimized orbital parameters
   const earthRadius = 1;
-  const moonOrbitRadius = 8;
-  const moonSize = 0.3;
-  const eclipticRadius = 12;
+  const moonOrbitRadius = isMobile ? 6 : 8; // Smaller orbit for mobile
+  const moonSize = isMobile ? 0.25 : 0.3; // Smaller moon for mobile
+  const eclipticRadius = isMobile ? 10 : 12; // Smaller ecliptic for mobile
   const orbitalInclination = 5.14 * (Math.PI / 180); // 5.14 degrees in radians
   
   // Calculate lunar nodes positions
@@ -137,7 +137,7 @@ function RahuKetuSimulation({ isActive, onExit }) {
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [isActive, onExit]);
   
-  // Camera positioning based on view mode
+  // Mobile-optimized camera positioning
   useFrame((state) => {
     if (!isActive) return;
     
@@ -146,18 +146,18 @@ function RahuKetuSimulation({ isActive, onExit }) {
     
     switch (cameraView) {
       case 'topDown':
-        targetPosition.set(0, 25, 0);
+        targetPosition.set(0, isMobile ? 20 : 25, 0);
         camera.position.lerp(targetPosition, 0.05);
         camera.lookAt(0, 0, 0);
         break;
       case 'sideProfile':
-        targetPosition.set(25, 0, 0);
+        targetPosition.set(isMobile ? 20 : 25, 0, 0);
         camera.position.lerp(targetPosition, 0.05);
         camera.lookAt(0, 0, 0);
         break;
       case 'perspective':
       default:
-        targetPosition.set(20, 15, 20);
+        targetPosition.set(isMobile ? 15 : 20, isMobile ? 12 : 15, isMobile ? 15 : 20);
         camera.position.lerp(targetPosition, 0.05);
         camera.lookAt(0, 0, 0);
         break;
@@ -304,8 +304,8 @@ function RahuKetuSimulation({ isActive, onExit }) {
         </div>
       </Html>
       
-      {/* Exit Button */}
-      <Html position={[30, 0, 30]} center style={{ pointerEvents: 'auto' }}>
+      {/* Mobile-optimized Exit Button */}
+      <Html position={[isMobile ? 20 : 30, 0, isMobile ? 20 : 30]} center style={{ pointerEvents: 'auto' }}>
         <button
           onClick={() => onExit && onExit()}
           style={{
@@ -313,8 +313,8 @@ function RahuKetuSimulation({ isActive, onExit }) {
             color: 'white',
             border: '2px solid #ff0000',
             borderRadius: '0px',
-            padding: '10px 20px',
-            fontSize: '14px',
+            padding: isMobile ? '8px 16px' : '10px 20px',
+            fontSize: isMobile ? '12px' : '14px',
             fontWeight: 'bold',
             cursor: 'pointer',
             boxShadow: '0 0 15px rgba(255, 0, 0, 0.5)',
@@ -332,57 +332,59 @@ function RahuKetuSimulation({ isActive, onExit }) {
             e.target.style.transform = 'scale(1.0)';
           }}
         >
-          EXIT SIMULATION
+          {isMobile ? 'EXIT' : 'EXIT SIMULATION'}
         </button>
       </Html>
       
-      {/* Controls Instructions - updated with exit information */}
-      <Html position={[-20, 6, 15]} style={{ pointerEvents: 'none' }}>
+      {/* Mobile-optimized Controls Instructions */}
+      <Html position={[isMobile ? -15 : -20, isMobile ? 4 : 6, isMobile ? 10 : 15]} style={{ pointerEvents: 'none' }}>
         <div style={{
           color: 'white',
-          fontSize: '11px',
+          fontSize: isMobile ? '9px' : '11px',
           background: 'rgba(0,0,0,0.8)',
-          padding: '4px 36px',  
+          padding: isMobile ? '3px 20px' : '4px 36px',
           borderRadius: '20px',
           border: '2px solid rgba(255,255,255,0.5)',
           boxShadow: '0 0 10px rgba(255, 255, 255, 0.2)',
-          maxWidth: '180px'
+          maxWidth: isMobile ? '140px' : '180px'
         }}>
           <div style={{ marginBottom: '4px', fontWeight: 'bold', color: '#ffaa00' }}>
-            Rahu-Ketu Simulation
+            {isMobile ? 'Rahu-Ketu' : 'Rahu-Ketu Simulation'}
           </div>
-          <div style={{ fontSize: '10px', marginBottom: '6px' }}>
-            Press 'C' to cycle camera views:
+          <div style={{ fontSize: isMobile ? '8px' : '10px', marginBottom: '6px' }}>
+            {isMobile ? 'Tap C: Camera views' : 'Press \'C\' to cycle camera views:'}
           </div>
-          <div style={{ fontSize: '9px', opacity: 0.8 }}>
-            • Top-down (XY plane)<br/>
-            • 3D Perspective<br/>
-            • Side profile (XZ plane)
+          {!isMobile && (
+            <div style={{ fontSize: '9px', opacity: 0.8 }}>
+              • Top-down (XY plane)<br/>
+              • 3D Perspective<br/>
+              • Side profile (XZ plane)
+            </div>
+          )}
+          <div style={{ fontSize: isMobile ? '8px' : '9px', marginTop: '6px', borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '4px' }}>
+            Current: <span style={{ color: '#66ccff' }}>{isMobile ? cameraView.split('Down')[0] || cameraView.split('Profile')[0] || cameraView : cameraView}</span>
           </div>
-          <div style={{ fontSize: '9px', marginTop: '6px', borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '4px' }}>
-            Current: <span style={{ color: '#66ccff' }}>{cameraView}</span>
-          </div>
-          <div style={{ fontSize: '9px', marginTop: '4px', borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '4px', color: '#ff6666' }}>
-            Press 'R' or 'ESC' to exit<br/>
-            Click EXIT button above
+          <div style={{ fontSize: isMobile ? '8px' : '9px', marginTop: '4px', borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '4px', color: '#ff6666' }}>
+            {isMobile ? 'Tap R/ESC to exit' : 'Press \'R\' or \'ESC\' to exit'}<br/>
+            {isMobile ? 'Or tap EXIT' : 'Click EXIT button above'}
           </div>
         </div>
       </Html>
       
-      {/* Information Panel - repositioned closer to center with proper gap */}
-      <Html position={[18, 6, 0]} style={{ pointerEvents: 'none' }}>
+      {/* Mobile-optimized Information Panel */}
+      <Html position={[isMobile ? 12 : 18, isMobile ? 4 : 6, 0]} style={{ pointerEvents: 'none' }}>
         <div style={{
           color: 'white',
-          fontSize: '10px',
+          fontSize: isMobile ? '8px' : '10px',
           background: 'rgba(0,0,0,0.8)',
-          padding: '10px 14px',
-          borderRadius: '0px', // Square box
+          padding: isMobile ? '8px 10px' : '10px 14px',
+          borderRadius: '0px',
           border: '2px solid rgba(255, 170, 0, 0.8)',
           boxShadow: '0 0 15px rgba(255, 170, 0, 0.3)',
-          maxWidth: '200px'
+          maxWidth: isMobile ? '140px' : '200px'
         }}>
           <div style={{ marginBottom: '6px', fontWeight: 'bold', color: '#ffaa00' }}>
-            Vedic Astrology Concept
+            {isMobile ? 'Vedic Concept' : 'Vedic Astrology Concept'}
           </div>
           {/* <div style={{ fontSize: '9px', lineHeight: '1.4', opacity: 0.9 }}>
             <strong>Rahu & Ketu:</strong> The lunar nodes where the Moon's orbit intersects the ecliptic plane.
@@ -396,42 +398,41 @@ function RahuKetuSimulation({ isActive, onExit }) {
         </div>
       </Html>
       
-      {/* Moon's Orbit Label - adjusted position to avoid overlap */}
-      <Html position={[0, moonOrbitRadius + 1.5, 0]} center>
+      {/* Mobile-optimized orbit and plane labels */}
+      <Html position={[0, moonOrbitRadius + (isMobile ? 1 : 1.5), 0]} center>
         <div style={{
           color: '#00ffff',
-          fontSize: '12px',
+          fontSize: isMobile ? '10px' : '12px',
           fontWeight: 'bold',
           textAlign: 'center',
           background: 'rgba(0,0,0,0.7)',
-          padding: '4px 8px',
-          borderRadius: '0px', // Square box
+          padding: isMobile ? '3px 6px' : '4px 8px',
+          borderRadius: '0px',
           border: '1px solid #00ffff',
           boxShadow: '0 0 8px rgba(0, 255, 255, 0.3)'
         }}>
           Moon's Orbit<br/>
-          <span style={{ fontSize: '10px', opacity: 0.8 }}>
-            (Inclined 5.14°)
+          <span style={{ fontSize: isMobile ? '8px' : '10px', opacity: 0.8 }}>
+            {isMobile ? '(5.14°)' : '(Inclined 5.14°)'}
           </span>
         </div>
       </Html>
       
-      {/* Ecliptic Plane Label - adjusted position for better visibility */}
-      <Html position={[eclipticRadius - 3, 0, 0]} center>
+      <Html position={[eclipticRadius - (isMobile ? 2 : 3), 0, 0]} center>
         <div style={{
           color: '#ffff00',
-          fontSize: '12px',
+          fontSize: isMobile ? '10px' : '12px',
           fontWeight: 'bold',
           textAlign: 'center',
           background: 'rgba(0,0,0,0.7)',
-          padding: '4px 8px',
-          borderRadius: '0px', // Square box
+          padding: isMobile ? '3px 6px' : '4px 8px',
+          borderRadius: '0px',
           border: '1px solid #ffff00',
           boxShadow: '0 0 8px rgba(255, 255, 0, 0.3)'
         }}>
-          Ecliptic Plane<br/>
-          <span style={{ fontSize: '10px', opacity: 0.8 }}>
-            (Earth-Sun Orbital Plane)
+          {isMobile ? 'Ecliptic' : 'Ecliptic Plane'}<br/>
+          <span style={{ fontSize: isMobile ? '8px' : '10px', opacity: 0.8 }}>
+            {isMobile ? '(Earth-Sun)' : '(Earth-Sun Orbital Plane)'}
           </span>
         </div>
       </Html>

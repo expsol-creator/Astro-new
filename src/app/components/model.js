@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, Suspense, lazy, useMemo, useCallback } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, useTexture, Html } from "@react-three/drei";
 import * as THREE from "three";
@@ -10,18 +10,33 @@ import {
   SaturnRings, 
   PlanetOrbitPath, 
   PlanetAxis, 
-  planetData, 
+  usePlanetData,
   getPlanetPosition 
 } from './PlanetarySystem';
-import RahuKetuSimulation from './RahuKetuSimulation';
 
+// Lazy load heavy components
+const RahuKetuSimulation = lazy(() => import('./RahuKetuSimulation'));
+
+// Mobile detection utility
+const isMobile = () => {
+  if (typeof window !== 'undefined') {
+    return window.innerWidth <= 768 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  }
+  return false;
+};
+
+// Optimized Stars component
 function Stars() {
   const starsRef = useRef();
   const [positions, setPositions] = useState(null);
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
 
   useEffect(() => {
-    const starPositions = new Float32Array(2000 * 3);
-    for (let i = 0; i < 2000; i++) {
+    setIsMobileDevice(isMobile());
+    const starCount = isMobile() ? 600 : 1200; // Further reduced for performance
+    const starPositions = new Float32Array(starCount * 3);
+    
+    for (let i = 0; i < starCount; i++) {
       starPositions[i * 3] = (Math.random() - 0.5) * 100;
       starPositions[i * 3 + 1] = (Math.random() - 0.5) * 100;
       starPositions[i * 3 + 2] = (Math.random() - 0.5) * 100;
@@ -50,12 +65,11 @@ function Stars() {
       <shaderMaterial
         uniforms={{
           time: { value: 0 },
-          size: { value: 2.0 },
+          size: { value: isMobileDevice ? 1.2 : 1.8 },
         }}
         vertexShader={`
           uniform float time;
           uniform float size;
-          attribute float randomness;
           
           void main() {
             vec4 modelPosition = modelMatrix * vec4(position, 1.0);
@@ -63,7 +77,7 @@ function Stars() {
             vec4 projectedPosition = projectionMatrix * viewPosition;
             
             gl_Position = projectedPosition;
-            gl_PointSize = size * (1.0 + sin(time * 2.0 + position.x * 0.01) * 0.5);
+            gl_PointSize = size * (1.0 + sin(time * 2.0 + position.x * 0.01) * 0.4);
           }
         `}
         fragmentShader={`
@@ -74,7 +88,7 @@ function Stars() {
             if (distanceToCenter > 0.5) discard;
             
             float alpha = 1.0 - distanceToCenter * 2.0;
-            float twinkle = sin(time * 3.0 + gl_FragCoord.x * 0.1 + gl_FragCoord.y * 0.1) * 0.3 + 0.7;
+            float twinkle = sin(time * 3.0 + gl_FragCoord.x * 0.1 + gl_FragCoord.y * 0.1) * 0.2 + 0.8;
             
             gl_FragColor = vec4(1.0, 1.0, 1.0, alpha * twinkle);
           }
@@ -86,190 +100,87 @@ function Stars() {
   );
 }
 
-function ShootingStars() {
-  const shootingStarsRef = useRef();
-  const [shootingStarPositions, setShootingStarPositions] = useState(null);
-
-  useEffect(() => {
-    const starCount = 8; // Increased count for more variety
-    const positions = new Float32Array(starCount * 6);
-    
-    for (let i = 0; i < starCount; i++) {
-      const i6 = i * 6;
-      // Start from upper atmosphere positions for more realistic entry
-      const startX = (Math.random() - 0.5) * 200;
-      const startY = 80 + Math.random() * 40; // Start high in the sky
-      const startZ = (Math.random() - 0.5) * 200;
-      
-      // Create realistic downward trajectory with slight horizontal movement
-      const dirX = (Math.random() - 0.5) * 15; // Less horizontal spread
-      const dirY = -25 - Math.random() * 15; // Stronger downward motion
-      const dirZ = (Math.random() - 0.5) * 15;
-      
-      // Start point
-      positions[i6] = startX;
-      positions[i6 + 1] = startY;
-      positions[i6 + 2] = startZ;
-      
-      // End point (creates the trail)
-      positions[i6 + 3] = startX + dirX;
-      positions[i6 + 4] = startY + dirY;
-      positions[i6 + 5] = startZ + dirZ;
-    }
-    
-    setShootingStarPositions(positions);
-  }, []);
-
-  useFrame((state) => {
-    if (shootingStarsRef.current && shootingStarPositions) {
-      const time = state.clock.elapsedTime;
-      const positionAttribute = shootingStarsRef.current.geometry.attributes.position;
-      
-      // Realistic shooting star cycle - longer intervals like real meteors
-      for (let i = 0; i < shootingStarPositions.length / 6; i++) {
-        const i6 = i * 6;
-        const cycleTime = time % 15; // 15 second cycle for more realistic timing
-        const starDelay = i * 1.8; // Staggered timing between different meteors
-        const effectiveTime = (cycleTime - starDelay + 15) % 15;
-        
-        if (effectiveTime < 4) { // Visible for 4 seconds - slow motion effect
-          const progress = effectiveTime / 4;
-          
-          // Realistic physics - faster acceleration as it falls
-          const acceleratedProgress = progress * progress; // Quadratic acceleration
-          const speed = 8 + acceleratedProgress * 12; // Speed increases from 8 to 20
-          
-          // Calculate realistic trajectory
-          const gravity = acceleratedProgress * 2; // Gravity effect
-          
-          // Head of the meteor
-          positionAttribute.array[i6] = shootingStarPositions[i6] + acceleratedProgress * speed * Math.cos(i * 0.7);
-          positionAttribute.array[i6 + 1] = shootingStarPositions[i6 + 1] - acceleratedProgress * speed - gravity * 5;
-          positionAttribute.array[i6 + 2] = shootingStarPositions[i6 + 2] + acceleratedProgress * speed * Math.sin(i * 0.5);
-          
-          // Tail of the meteor (creates the streak effect)
-          const tailOffset = 0.3; // Tail follows slightly behind
-          const tailProgress = Math.max(0, acceleratedProgress - tailOffset);
-          positionAttribute.array[i6 + 3] = shootingStarPositions[i6 + 3] + tailProgress * speed * Math.cos(i * 0.7);
-          positionAttribute.array[i6 + 4] = shootingStarPositions[i6 + 4] - tailProgress * speed - gravity * 3;
-          positionAttribute.array[i6 + 5] = shootingStarPositions[i6 + 5] + tailProgress * speed * Math.sin(i * 0.5);
-          
-        } else {
-          // Hide shooting star when not active
-          positionAttribute.array[i6] = 1000;
-          positionAttribute.array[i6 + 1] = 1000;
-          positionAttribute.array[i6 + 2] = 1000;
-          positionAttribute.array[i6 + 3] = 1000;
-          positionAttribute.array[i6 + 4] = 1000;
-          positionAttribute.array[i6 + 5] = 1000;
-        }
-      }
-      positionAttribute.needsUpdate = true;
-    }
-  });
-
-  if (!shootingStarPositions) return null;
-
-  return (
-    <line ref={shootingStarsRef}>
-      <bufferGeometry>
-        <bufferAttribute
-          attach="attributes-position"
-          count={shootingStarPositions.length / 3}
-          array={shootingStarPositions}
-          itemSize={3}
-        />
-      </bufferGeometry>
-      <lineBasicMaterial
-        color={0xffffff}
-        transparent
-        opacity={0.8}
-        linewidth={2}
-      />
-    </line>
-  );
-}
-
+// Progressive loading backgrounds
 function MilkyWay() {
   const milkyWayRef = useRef();
-  const texture = useTexture("/8k_stars_milky_way.jpg");
+  const [texture, setTexture] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const loader = new THREE.TextureLoader();
+      loader.load(
+        "/8k_stars_milky_way.jpg",
+        (loadedTexture) => {
+          loadedTexture.minFilter = THREE.LinearFilter;
+          setTexture(loadedTexture);
+          setIsLoading(false);
+        },
+        undefined,
+        (error) => {
+          console.warn("Failed to load Milky Way texture:", error);
+          setIsLoading(false);
+        }
+      );
+    }, 3000); // Delay loading
+
+    return () => clearTimeout(timer);
+  }, []);
 
   useFrame((state, delta) => {
     if (milkyWayRef.current) {
-      milkyWayRef.current.rotation.y += delta * 0.001;
+      milkyWayRef.current.rotation.y += delta * 0.0008;
     }
   });
 
+  if (isLoading || !texture) return null;
+
   return (
-    <mesh ref={milkyWayRef} scale={[200, 200, 200]}>
-      <sphereGeometry args={[1, 64, 64]} />
+    <mesh ref={milkyWayRef} scale={[160, 160, 160]}>
+      <sphereGeometry args={[1, 24, 24]} />
       <meshBasicMaterial 
         map={texture} 
         side={THREE.BackSide}
         transparent={true}
-        opacity={0.6}
+        opacity={0.4}
       />
     </mesh>
   );
 }
 
 function NebulaBackground() {
-  const nebulaRef = useRef();
-  const nebula2Ref = useRef();
-  const nebula3Ref = useRef();
-  const texture = useTexture("/3d-render-solar-system-background-with-colourful-nebula.jpg");
+  const [texture, setTexture] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  useFrame((state, delta) => {
-    const time = state.clock.elapsedTime;
-    
-    if (nebulaRef.current) {
-      // Slow rotation and subtle movement for main nebula
-      nebulaRef.current.rotation.y += delta * 0.0005;
-      nebulaRef.current.rotation.z += delta * 0.0003;
-      nebulaRef.current.position.x = Math.sin(time * 0.1) * 2;
-      nebulaRef.current.position.y = Math.cos(time * 0.08) * 1.5;
-    }
-    
-    if (nebula2Ref.current) {
-      // Different rotation for variety
-      nebula2Ref.current.rotation.y -= delta * 0.0004;
-      nebula2Ref.current.rotation.x += delta * 0.0002;
-      nebula2Ref.current.position.z = Math.sin(time * 0.05) * 3;
-    }
-    
-    if (nebula3Ref.current) {
-      // Third nebula with different motion
-      nebula3Ref.current.rotation.z += delta * 0.0006;
-      nebula3Ref.current.position.x = Math.cos(time * 0.07) * 2.5;
-      nebula3Ref.current.position.y = Math.sin(time * 0.09) * 1.8;
-    }
-  });
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const loader = new THREE.TextureLoader();
+      loader.load(
+        "/3d-render-solar-system-background-with-colourful-nebula.jpg",
+        (loadedTexture) => {
+          loadedTexture.minFilter = THREE.LinearFilter;
+          setTexture(loadedTexture);
+          setIsLoading(false);
+        },
+        undefined,
+        (error) => {
+          console.warn("Failed to load Nebula texture:", error);
+          setIsLoading(false);
+        }
+      );
+    }, 4000); // Further delayed
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (isLoading || !texture) return null;
 
   return (
     <group>
-      {/* Main nebula in background */}
       <mesh 
-        ref={nebulaRef} 
-        position={[30, 15, -80]} 
-        rotation={[0.3, 0.8, 0.2]}
-        scale={[60, 40, 30]}
-      >
-        <planeGeometry args={[1, 1]} />
-        <meshBasicMaterial 
-          map={texture} 
-          transparent={true}
-          opacity={0.7}
-          side={THREE.DoubleSide}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
-      
-      {/* Second nebula positioned in different corner */}
-      <mesh 
-        ref={nebula2Ref} 
-        position={[-45, -20, -90]} 
-        rotation={[0.1, -0.5, 0.4]}
-        scale={[45, 35, 25]}
+        position={[25, 12, -60]} 
+        rotation={[0.2, 0.6, 0.1]}
+        scale={[40, 28, 20]}
       >
         <planeGeometry args={[1, 1]} />
         <meshBasicMaterial 
@@ -281,28 +192,10 @@ function NebulaBackground() {
         />
       </mesh>
       
-      {/* Third nebula for more coverage */}
       <mesh 
-        ref={nebula3Ref} 
-        position={[20, -30, -70]} 
-        rotation={[-0.2, 1.2, -0.3]}
-        scale={[50, 30, 20]}
-      >
-        <planeGeometry args={[1, 1]} />
-        <meshBasicMaterial 
-          map={texture} 
-          transparent={true}
-          opacity={0.4}
-          side={THREE.DoubleSide}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
-      
-      {/* Additional smaller nebula patches for realism */}
-      <mesh 
-        position={[-20, 25, -60]} 
-        rotation={[0.5, -0.8, 0.1]}
-        scale={[25, 20, 15]}
+        position={[-30, -12, -70]} 
+        rotation={[0.1, -0.4, 0.3]}
+        scale={[35, 25, 18]}
       >
         <planeGeometry args={[1, 1]} />
         <meshBasicMaterial 
@@ -313,34 +206,33 @@ function NebulaBackground() {
           blending={THREE.AdditiveBlending}
         />
       </mesh>
-      
-      <mesh 
-        position={[40, -10, -85]} 
-        rotation={[-0.3, 0.6, -0.2]}
-        scale={[35, 25, 18]}
-      >
-        <planeGeometry args={[1, 1]} />
-        <meshBasicMaterial 
-          map={texture} 
-          transparent={true}
-          opacity={0.35}
-          side={THREE.DoubleSide}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
     </group>
   );
 }
 
 function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
-  // Calculate static positions for individual view mode - compacted spacing
-  const radius = 6; // Reduced from 9 to 6
-  const angleStep = (2 * Math.PI) / 7;
+  const planetData = usePlanetData(); // Use SSR-safe hook
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [loadedComponents, setLoadedComponents] = useState(new Set());
   
-  // Bird's eye view circular arrangement - increased spacing from sun
-  const getBirdEyePositions = () => {
-    const birdRadius = 7; // Increased from 4 to 7 for more space from sun
-    const birdAngleStep = (2 * Math.PI) / 6; // 6 planets around the sun
+  // Memoize positions for performance
+  const staticPlanetPositions = useMemo(() => {
+    const radius = 6;
+    const angleStep = (2 * Math.PI) / 7;
+    return [
+      [0, 0, 0], // Center Sun
+      [radius * Math.cos(0), 0, radius * Math.sin(0)], // Mars
+      [radius * Math.cos(angleStep), 0, radius * Math.sin(angleStep)], // Venus
+      [(radius - 1.5) * Math.cos(2 * angleStep), 0, (radius - 1.5) * Math.sin(2 * angleStep)], // Mercury
+      [radius * Math.cos(3 * angleStep), 0, radius * Math.sin(3 * angleStep)], // Earth
+      [(radius + 1) * Math.cos(4 * angleStep), 0, (radius + 1) * Math.sin(4 * angleStep)], // Jupiter
+      [(radius + 1.5) * Math.cos(5 * angleStep), 0, (radius + 1.5) * Math.sin(5 * angleStep)], // Saturn
+    ];
+  }, []);
+
+  const getBirdEyePositions = useMemo(() => () => {
+    const birdRadius = 7;
+    const birdAngleStep = (2 * Math.PI) / 6;
     return [
       [0, 0, 0], // Center Sun
       [birdRadius * Math.cos(0), 0, birdRadius * Math.sin(0)], // Mars
@@ -350,17 +242,7 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
       [birdRadius * Math.cos(4 * birdAngleStep), 0, birdRadius * Math.sin(4 * birdAngleStep)], // Jupiter
       [birdRadius * Math.cos(5 * birdAngleStep), 0, birdRadius * Math.sin(5 * birdAngleStep)], // Saturn
     ];
-  };
-
-  const staticPlanetPositions = [
-    [0, 0, 0], // Center Sun
-    [radius * Math.cos(0), 0, radius * Math.sin(0)], // Mars
-    [radius * Math.cos(angleStep), 0, radius * Math.sin(angleStep)], // Venus
-    [(radius - 1.5) * Math.cos(2 * angleStep), 0, (radius - 1.5) * Math.sin(2 * angleStep)], // Mercury - closer
-    [radius * Math.cos(3 * angleStep), 0, radius * Math.sin(3 * angleStep)], // Earth
-    [(radius + 1) * Math.cos(4 * angleStep), 0, (radius + 1) * Math.sin(4 * angleStep)], // Jupiter - slightly farther
-    [(radius + 1.5) * Math.cos(5 * angleStep), 0, (radius + 1.5) * Math.sin(5 * angleStep)], // Saturn - slightly farther
-  ];
+  }, []);
 
   const [isAnimating, setIsAnimating] = useState(true);
   const [glowIntensity, setGlowIntensity] = useState(0);
@@ -368,36 +250,66 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
   const [currentPlanetIndex, setCurrentPlanetIndex] = useState(0);
   const [hoveredPlanet, setHoveredPlanet] = useState(null);
   const [cameraDistance, setCameraDistance] = useState(5);
-  const [viewModeState, setViewModeState] = useState('overview'); // Changed default to overview
-  const [cameraMode, setCameraMode] = useState('overview'); // Changed default to overview
+  const [viewModeState, setViewModeState] = useState('overview');
+  const [cameraMode, setCameraMode] = useState('overview');
   const [dynamicPlanetPositions, setDynamicPlanetPositions] = useState(staticPlanetPositions);
   const [showRahuKetu, setShowRahuKetu] = useState(false);
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
   const orbitControlsRef = useRef();
   
-  // Camera mode configurations
+  // Progressive loading timers
+  useEffect(() => {
+    const coreTimer = setTimeout(() => {
+      setIsInitialLoading(false);
+      setLoadedComponents(prev => new Set([...prev, 'core']));
+    }, 800);
+
+    const backgroundTimer = setTimeout(() => {
+      setLoadedComponents(prev => new Set([...prev, 'background']));
+    }, 2500);
+
+    return () => {
+      clearTimeout(coreTimer);
+      clearTimeout(backgroundTimer);
+    };
+  }, []);
+
+  // Detect mobile device
+  useEffect(() => {
+    setIsMobileDevice(isMobile());
+    
+    const handleResize = () => {
+      setIsMobileDevice(isMobile());
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+  
+  // Mobile-optimized camera mode configurations
   const cameraModes = {
     normal: {
-      fov: 60,
-      distance: 5,
+      fov: isMobileDevice ? 90 : 80, // Wider FOV for mobile
+      distance: isMobileDevice ? 4 : 5, // Closer distance for mobile
       position: (target, distance) => new THREE.Vector3(target[0], target[1], target[2] + distance),
       name: 'Normal View'
     },
     bird: {
-      fov: 85, // Increased FOV for better circular view
-      distance: 16, // Increased from 12 to 16 to accommodate larger circle
-      position: (target, distance) => new THREE.Vector3(0, distance, 0), // Directly above center
+      fov: isMobileDevice ? 100 : 85, // Much wider FOV for mobile
+      distance: isMobileDevice ? 12 : 16, // Closer for mobile
+      position: (target, distance) => new THREE.Vector3(0, distance, 0),
       name: 'Bird\'s Eye'
     },
     overview: {
-      fov: 85, // Increased from 75 to 85 for wider view
-      distance: 25, // Increased from 20 to 25 for better clearance
-      position: (target, distance) => new THREE.Vector3(0, 10, distance), // Increased height from 6 to 10
+      fov: isMobileDevice ? 100 : 85, // Wider FOV for mobile
+      distance: isMobileDevice ? 20 : 25, // Closer for mobile
+      position: (target, distance) => new THREE.Vector3(0, isMobileDevice ? 8 : 10, distance),
       name: 'Solar System'
     },
     ein: {
-      fov: 70, // Increased from 60 to 70
-      distance: 22, // Increased from 18 to 22
-      position: (target, distance) => new THREE.Vector3(6, 12, distance), // Adjusted positions for better view
+      fov: isMobileDevice ? 85 : 70, // Wider FOV for mobile
+      distance: isMobileDevice ? 18 : 22, // Closer for mobile
+      position: (target, distance) => new THREE.Vector3(6, isMobileDevice ? 10 : 12, distance),
       name: 'Ein Overview'
     }
   };
@@ -528,32 +440,54 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
             const isJupiter = planetData[currentPlanetIndex].name === "Jupiter";
             let distance = currentCameraMode.distance;
             
-            if (isMars) distance = Math.max(distance * 0.6, 2);
-            if (isJupiter) distance = Math.max(distance * 0.8, 3);
-            
-            setCameraDistance(distance);
-            
-            const targetPos = currentCameraMode.position(targetPosition, distance);
-            state.camera.position.lerp(targetPos, 0.05);
+            // Special handling for Mars with mobile optimization
+            if (isMars && cameraMode === 'normal') {
+              distance = Math.max(distance * (isMobileDevice ? 0.6 : 0.7), isMobileDevice ? 2.0 : 2.5);
+              // Adjust camera position for optimal Mars viewing angle
+              const marsOptimalPos = new THREE.Vector3(
+                targetPosition[0] + distance * (isMobileDevice ? 0.7 : 0.8),
+                targetPosition[1] + distance * (isMobileDevice ? 0.6 : 0.8),
+                targetPosition[2] + distance * 1.0
+              );
+              state.camera.position.lerp(marsOptimalPos, 0.05);
+              setCameraDistance(distance);
+            } else {
+              if (isMars) distance = Math.max(distance * (isMobileDevice ? 0.5 : 0.6), isMobileDevice ? 1.5 : 2);
+              if (isJupiter) distance = Math.max(distance * (isMobileDevice ? 0.7 : 0.8), isMobileDevice ? 2.5 : 3);
+              
+              setCameraDistance(distance);
+              const targetPos = currentCameraMode.position(targetPosition, distance);
+              state.camera.position.lerp(targetPos, 0.05);
+            }
           }
         }
       }
     }
   });
 
+  // Find Earth's index in planetData array
+  const earthIndex = useMemo(() => {
+    return planetData.findIndex(planet => planet.name === "Earth");
+  }, [planetData]);
+
   return (
     <>
       {!showRahuKetu && (
         <>
-          <MilkyWay />
-          <NebulaBackground />
           <Stars />
-          <ShootingStars />
-          <ambientLight intensity={2.5} />
-          <pointLight position={[10, 10, 10]} intensity={2} />
+          <ambientLight intensity={isMobileDevice ? 1.6 : 2.2} />
+          <pointLight position={[10, 10, 10]} intensity={isMobileDevice ? 1.0 : 1.8} />
           
-          {/* Planet Orbital Paths */}
-          {planetData.map((planet, index) => (
+          {/* Progressive background loading */}
+          {loadedComponents.has('background') && !isMobileDevice && (
+            <Suspense fallback={null}>
+              <MilkyWay />
+              <NebulaBackground />
+            </Suspense>
+          )}
+          
+          {/* Only render orbits when core is loaded */}
+          {loadedComponents.has('core') && planetData.map((planet, index) => (
             <PlanetOrbitPath 
               key={`orbit-${index}-${planet.name}`}
               planetIndex={index}
@@ -564,7 +498,6 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
           {planetData.map((planet, index) => {
             let position;
             
-            // Choose position based on view mode and camera mode
             if (viewModeState === 'overview') {
               position = dynamicPlanetPositions[index];
             } else if (cameraMode === 'bird') {
@@ -575,100 +508,113 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
             
             return (
               <group key={`planet-${index}-${planet.name}`}>
-                <EarthModel
-                  isAnimating={isAnimating}
-                  glowIntensity={glowIntensity}
-                  texturePath={planet.texture}
-                  position={position}
-                  planetInfo={planet}
-                  onHover={setHoveredPlanet}
-                  onHoverOut={() => setHoveredPlanet(null)}
-                  viewModeState={cameraMode === 'bird' ? 'individual' : viewModeState}
-                  planetIndex={index}
-                />
+                <Suspense fallback={
+                  <mesh position={position} scale={isMobileDevice ? 0.4 : 0.5}>
+                    <sphereGeometry args={[1, 8, 8]} />
+                    <meshBasicMaterial color={0x333333} wireframe={true} />
+                  </mesh>
+                }>
+                  <EarthModel
+                    isAnimating={isAnimating}
+                    glowIntensity={glowIntensity}
+                    texturePath={planet.texture}
+                    position={position}
+                    planetInfo={planet}
+                    onHover={setHoveredPlanet}
+                    onHoverOut={() => setHoveredPlanet(null)}
+                    viewModeState={cameraMode === 'bird' ? 'individual' : viewModeState}
+                    planetIndex={index}
+                    isMobile={isMobileDevice}
+                  />
+                </Suspense>
                 
-                <PlanetAxis 
-                  position={position}
-                  planetIndex={index}
-                  planetInfo={planet}
-                  viewModeState={cameraMode === 'bird' ? 'individual' : viewModeState}
-                />
-                
-                {/* Planet Name Label */}
-                <Html 
-                  position={[
-                    position[0],
-                    position[1] - 1.0,
-                    position[2]
-                  ]} 
-                  center
-                  distanceFactor={cameraMode === 'bird' ? 8 : (viewModeState === 'overview' ? 15 : 5)}
-                  occlude={true}
-                  transform
-                  sprite
-                  style={{ 
-                    pointerEvents: 'none'
-                  }}
-                >
-                  <div style={{
-                    background: 'rgba(0, 0, 0, 0.8)',
-                    color: 'white',
-                    padding: '6px 10px',
-                    borderRadius: '8px',
-                    fontSize: cameraMode === 'bird' ? '10px' : (viewModeState === 'overview' ? '8px' : '11px'),
-                    fontWeight: 'bold',
-                    border: '1px solid rgba(255, 255, 255, 0.3)',
-                    backdropFilter: 'blur(8px)',
-                    textAlign: 'center',
-                    whiteSpace: 'nowrap',
-                    boxShadow: '0 2px 10px rgba(0, 0, 0, 0.5)',
-                    minWidth: cameraMode === 'bird' ? '50px' : (viewModeState === 'overview' ? '40px' : '60px')
-                  }}>
-                    {planet.name}
-                  </div>
-                </Html>
+                {/* Only show additional elements when loaded */}
+                {loadedComponents.has('core') && (
+                  <>
+                    <PlanetAxis 
+                      position={position}
+                      planetIndex={index}
+                      planetInfo={planet}
+                      viewModeState={cameraMode === 'bird' ? 'individual' : viewModeState}
+                    />
+                    
+                    <Html 
+                      position={[position[0], position[1] - 1.0, position[2]]} 
+                      center
+                      distanceFactor={cameraMode === 'bird' ? 8 : (viewModeState === 'overview' ? 15 : 5)}
+                      occlude={true}
+                      transform
+                      sprite
+                      style={{ pointerEvents: 'none' }}
+                    >
+                      <div style={{
+                        background: 'rgba(0, 0, 0, 0.8)',
+                        color: 'white',
+                        padding: '6px 10px',
+                        borderRadius: '8px',
+                        fontSize: cameraMode === 'bird' ? '10px' : (viewModeState === 'overview' ? '8px' : '11px'),
+                        fontWeight: 'bold',
+                        border: '1px solid rgba(255, 255, 255, 0.3)',
+                        backdropFilter: 'blur(8px)',
+                        textAlign: 'center',
+                        whiteSpace: 'nowrap',
+                        boxShadow: '0 2px 10px rgba(0, 0, 0, 0.5)',
+                        minWidth: cameraMode === 'bird' ? '50px' : (viewModeState === 'overview' ? '40px' : '60px')
+                      }}>
+                        {planet.name}
+                      </div>
+                    </Html>
+                  </>
+                )}
               </group>
             );
           })}
           
-          {/* Moon orbiting Earth */}
-          <MoonOrbit 
-            earthPosition={viewModeState === 'overview' 
-              ? dynamicPlanetPositions[4]
-              : (cameraMode === 'bird' ? getBirdEyePositions()[4] : staticPlanetPositions[4])} 
-            onHover={setHoveredPlanet}
-            onHoverOut={() => setHoveredPlanet(null)}
-          />
-          
-          <SaturnRings position={viewModeState === 'overview' 
-            ? dynamicPlanetPositions[6]
-            : (cameraMode === 'bird' ? getBirdEyePositions()[6] : staticPlanetPositions[6])} />
+          {/* Progressive loading of Moon and Saturn rings */}
+          {loadedComponents.has('core') && earthIndex !== -1 && (
+            <>
+              <Suspense fallback={null}>
+                <MoonOrbit 
+                  earthPosition={viewModeState === 'overview' 
+                    ? dynamicPlanetPositions[earthIndex]  // Use earthIndex instead of hardcoded 4
+                    : (cameraMode === 'bird' ? getBirdEyePositions()[earthIndex] : staticPlanetPositions[earthIndex])} 
+                  onHover={setHoveredPlanet}
+                  onHoverOut={() => setHoveredPlanet(null)}
+                  isMobile={isMobileDevice}
+                />
+              </Suspense>
+              
+              {/* Find Saturn's index for rings */}
+              <SaturnRings position={viewModeState === 'overview' 
+                ? dynamicPlanetPositions[planetData.findIndex(planet => planet.name === "Saturn")]
+                : (cameraMode === 'bird' ? getBirdEyePositions()[planetData.findIndex(planet => planet.name === "Saturn")] : staticPlanetPositions[planetData.findIndex(planet => planet.name === "Saturn")])} />
+            </>
+          )}
           
           <OrbitControls 
             ref={orbitControlsRef}
             enableZoom={viewModeState === 'overview' || cameraMode === 'bird' || cameraMode === 'wide'} 
             enableRotate={true} 
             enablePan={viewModeState === 'overview' || cameraMode === 'bird'}
-            minDistance={cameraMode === 'bird' ? 12 : (viewModeState === 'overview' ? 12 : 1)} // Increased bird min distance from 8 to 12
-            maxDistance={cameraMode === 'bird' ? 25 : (viewModeState === 'overview' ? 50 : 15)} // Increased bird max distance from 20 to 25
+            minDistance={cameraMode === 'bird' ? (isMobileDevice ? 10 : 12) : (viewModeState === 'overview' ? (isMobileDevice ? 10 : 12) : 1)}
+            maxDistance={cameraMode === 'bird' ? (isMobileDevice ? 20 : 25) : (viewModeState === 'overview' ? (isMobileDevice ? 40 : 50) : (isMobileDevice ? 12 : 15))}
             enableDamping={true}
             dampingFactor={0.05}
-            rotateSpeed={cameraMode === 'cinematic' ? 0.3 : 0.5}
-            zoomSpeed={cameraMode === 'telephoto' ? 0.5 : 1.2}
+            rotateSpeed={isMobileDevice ? 0.8 : (cameraMode === 'cinematic' ? 0.3 : 0.5)}
+            zoomSpeed={isMobileDevice ? 1.5 : (cameraMode === 'telephoto' ? 0.5 : 1.2)}
             target={viewModeState === 'overview' || cameraMode === 'bird' ? [0, 0, 0] : staticPlanetPositions[currentPlanetIndex]}
           />
           
-          {/* Planet Hover Information Display - Only show in individual view mode and not in bird's eye view */}
+          {/* Mobile-optimized hover information */}
           {hoveredPlanet && viewModeState === 'individual' && cameraMode !== 'bird' && (
             <Html 
               position={[
-                // Positioning for normal view only
-                hoveredPlanet.position ? hoveredPlanet.position[0] + 3.0 : 0,
-                hoveredPlanet.position ? hoveredPlanet.position[1] + 0.5 : 0,
+                hoveredPlanet.position ? hoveredPlanet.position[0] + (isMobileDevice ? 2.0 : 3.0) : 0,
+                hoveredPlanet.position ? hoveredPlanet.position[1] + (isMobileDevice ? 0.3 : 0.5) : 0,
                 hoveredPlanet.position ? hoveredPlanet.position[2] : 0
               ]} 
               center
-              distanceFactor={cameraModes[cameraMode].fov * 0.10}
+              distanceFactor={cameraModes[cameraMode].fov * (isMobileDevice ? 0.08 : 0.10)}
               occlude={false}
               transform
               sprite
@@ -677,42 +623,42 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
               <div style={{
                 background: 'rgba(0, 0, 0, 0.95)',
                 color: 'white',
-                padding: '10px 14px',
+                padding: isMobileDevice ? '8px 10px' : '10px 14px',
                 borderRadius: '8px',
-                fontSize: '10px',
+                fontSize: isMobileDevice ? '8px' : '10px',
                 border: '2px solid rgba(255, 255, 255, 0.5)',
                 backdropFilter: 'blur(10px)',
-                maxWidth: '200px',
-                minWidth: '160px',
+                maxWidth: isMobileDevice ? '150px' : '200px',
+                minWidth: isMobileDevice ? '120px' : '160px',
                 boxShadow: '0 4px 20px rgba(0, 0, 0, 0.9)',
-                transform: `scale(${Math.min(0.9, Math.max(0.6, cameraModes[cameraMode].fov / 65))})`,
+                transform: `scale(${isMobileDevice ? 0.8 : Math.min(0.9, Math.max(0.6, cameraModes[cameraMode].fov / 65))})`,
               }}>
                 <div style={{ 
-                  fontSize: '12px', 
+                  fontSize: isMobileDevice ? '10px' : '12px', 
                   fontWeight: 'bold', 
-                  marginBottom: '6px',
+                  marginBottom: '4px',
                   color: '#66ccff',
                   borderBottom: '1px solid rgba(255, 255, 255, 0.3)',
-                  paddingBottom: '4px'
+                  paddingBottom: '2px'
                 }}>
                   {hoveredPlanet.name}
                 </div>
                 <div style={{ 
-                  fontSize: '9px', 
-                  lineHeight: '1.3', 
-                  marginBottom: '6px',
+                  fontSize: isMobileDevice ? '7px' : '9px', 
+                  lineHeight: '1.2', 
+                  marginBottom: '4px',
                   opacity: 0.95
                 }}>
-                  {hoveredPlanet.description}
+                  {isMobileDevice ? hoveredPlanet.description.substring(0, 80) + '...' : hoveredPlanet.description}
                 </div>
                 <div style={{ 
-                  fontSize: '8px', 
+                  fontSize: isMobileDevice ? '6px' : '8px', 
                   opacity: 0.8,
                   borderTop: '1px solid rgba(255, 255, 255, 0.2)',
-                  paddingTop: '4px',
-                  marginTop: '6px'
+                  paddingTop: '2px',
+                  marginTop: '4px'
                 }}>
-                  <div style={{ marginBottom: '2px' }}>
+                  <div style={{ marginBottom: '1px' }}>
                     <strong>Distance:</strong> {hoveredPlanet.distance}
                   </div>
                   <div>
@@ -723,16 +669,16 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
             </Html>
           )}
           
-          {/* Camera Mode Instructions */}
-          <Html position={[-10, 14, 0]} style={{ pointerEvents: 'none' }}>
+          {/* Mobile-optimized Camera Mode Instructions */}
+          <Html position={[isMobileDevice ? -8 : -10, isMobileDevice ? 10 : 14, 0]} style={{ pointerEvents: 'none' }}>
             <div style={{
               background: 'rgba(0, 0, 0, 0.7)',
               color: 'white',
-              padding: '8px 12px',
+              padding: isMobileDevice ? '6px 8px' : '8px 12px',
               borderRadius: '8px',
-              fontSize: '11px',
+              fontSize: isMobileDevice ? '9px' : '11px',
               border: '2px solid rgba(255, 255, 255, 0.3)',
-              width: '220px',
+              width: isMobileDevice ? '160px' : '220px',
               textAlign: 'center',
             }}>
               <div style={{ marginBottom: '4px' }}>
@@ -740,40 +686,40 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
               </div>
               {!showRahuKetu && (
                 <>
-                  <div style={{ fontSize: '10px', opacity: 0.9, marginBottom: '4px' }}>
-                    Press 'V' to toggle view mode
+                  <div style={{ fontSize: isMobileDevice ? '8px' : '10px', opacity: 0.9, marginBottom: '4px' }}>
+                    {isMobileDevice ? 'Tap V: Toggle view' : 'Press \'V\' to toggle view mode'}
                   </div>
-                  <div style={{ fontSize: '10px', opacity: 0.9, marginBottom: '6px' }}>
-                    Press 'C' to cycle camera modes
+                  <div style={{ fontSize: isMobileDevice ? '8px' : '10px', opacity: 0.9, marginBottom: '6px' }}>
+                    {isMobileDevice ? 'Tap C: Camera modes' : 'Press \'C\' to cycle camera modes'}
                   </div>
                 </>
               )}
-              <div style={{ fontSize: '10px', opacity: 0.9, marginBottom: '6px' }}>
-                Press 'R' for Rahu-Ketu simulation
+              <div style={{ fontSize: isMobileDevice ? '8px' : '10px', opacity: 0.9, marginBottom: '6px' }}>
+                {isMobileDevice ? 'Tap R: Rahu-Ketu' : 'Press \'R\' for Rahu-Ketu simulation'}
               </div>
               {!showRahuKetu && (
                 <>
                   <div style={{ 
-                    fontSize: '12px', 
+                    fontSize: isMobileDevice ? '10px' : '12px', 
                     color: '#66ccff', 
                     fontWeight: 'bold',
                     borderTop: '1px solid rgba(255, 255, 255, 0.2)',
-                    paddingTop: '6px'
+                    paddingTop: '4px'
                   }}>
                     {cameraModes[cameraMode].name}
                   </div>
-                  <div style={{ fontSize: '9px', opacity: 0.7, marginTop: '2px' }}>
+                  <div style={{ fontSize: isMobileDevice ? '7px' : '9px', opacity: 0.7, marginTop: '2px' }}>
                     FOV: {cameraModes[cameraMode].fov}°
                   </div>
                 </>
               )}
               {showRahuKetu && (
                 <div style={{ 
-                  fontSize: '11px', 
+                  fontSize: isMobileDevice ? '9px' : '11px', 
                   color: '#ffaa00', 
                   fontWeight: 'bold',
                   borderTop: '1px solid rgba(255, 255, 255, 0.2)',
-                  paddingTop: '6px'
+                  paddingTop: '4px'
                 }}>
                   Rahu-Ketu Mode Active
                 </div>
@@ -781,31 +727,50 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
             </div>
           </Html>
 
-          {/* Camera Mode Indicator */}
-          <Html position={[10, 8, 0]} style={{ pointerEvents: 'none' }}>
+          {/* Mobile-optimized Camera Mode Indicator */}
+          <Html position={[isMobileDevice ? 8 : 10, isMobileDevice ? 6 : 8, 0]} style={{ pointerEvents: 'none' }}>
             <div style={{
               background: 'rgba(0, 0, 0, 0.8)',
               color: 'white',
-              padding: '6px 10px',
+              padding: isMobileDevice ? '4px 6px' : '6px 10px',
               borderRadius: '6px',
-              fontSize: '10px',
+              fontSize: isMobileDevice ? '8px' : '10px',
               border: '1px solid rgba(255, 255, 255, 0.3)',
-              minWidth: '100px',
+              minWidth: isMobileDevice ? '80px' : '100px',
               textAlign: 'center',
             }}>
               <div style={{ color: '#66ccff', fontWeight: 'bold' }}>
-                Camera Mode
+                {isMobileDevice ? 'Camera' : 'Camera Mode'}
               </div>
-              <div style={{ fontSize: '9px', opacity: 0.8 }}>
-                {cameraModes[cameraMode].name}
+              <div style={{ fontSize: isMobileDevice ? '7px' : '9px', opacity: 0.8 }}>
+                {isMobileDevice ? cameraModes[cameraMode].name.split(' ')[0] : cameraModes[cameraMode].name}
               </div>
             </div>
           </Html>
         </>
       )}
       
-      {/* Rahu-Ketu Simulation with exit functionality */}
-      <RahuKetuSimulation isActive={showRahuKetu} onExit={handleExitRahuKetu} />
+      {/* Lazy load Rahu-Ketu Simulation */}
+      {showRahuKetu && (
+        <Suspense fallback={
+          <Html center>
+            <div style={{
+              color: 'white',
+              fontSize: '16px',
+              textAlign: 'center',
+              background: 'rgba(0,0,0,0.8)',
+              padding: '20px',
+              borderRadius: '10px',
+              border: '1px solid #ffaa00'
+            }}>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-4"></div>
+              Loading Rahu-Ketu Simulation...
+            </div>
+          </Html>
+        }>
+          <RahuKetuSimulation isActive={showRahuKetu} onExit={() => setShowRahuKetu(false)} isMobile={isMobileDevice} />
+        </Suspense>
+      )}
     </>
   );
 }
@@ -813,18 +778,57 @@ function Scene({ onIntroComplete, setCurrentPlanet, viewMode, setViewMode }) {
 export default function Global() {
   const [introComplete, setIntroComplete] = useState(false);
   const [currentPlanet, setCurrentPlanet] = useState("Sun");
-  const [viewMode, setViewMode] = useState('overview'); // Changed default to overview
+  const [viewMode, setViewMode] = useState('overview');
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+    setIsMobileDevice(isMobile());
+    
+    // Preload critical resources
+    if (typeof window !== 'undefined') {
+      const link = document.createElement('link');
+      link.rel = 'preload';
+      link.href = '/8k_sun.jpg';
+      link.as = 'image';
+      document.head.appendChild(link);
+    }
+  }, []);
+
+  // Prevent SSR rendering
+  if (!isClient) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-black text-white">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-white mx-auto mb-6"></div>
+          <p className="text-xl mb-2">Initializing Solar System...</p>
+          <p className="text-sm opacity-70">Preparing 3D environment</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <section
-      className="relative flex items-center justify-center min-h-screen bg-black text-white"
-    >
-      <div
-        className="w-full h-screen relative z-10 p-2"
-      >
+    <section className="relative flex items-center justify-center min-h-screen bg-black text-white">
+      <div className="w-full h-screen relative z-10 p-2">
         <Canvas
           className="w-full h-screen"
-          camera={{ position: [0, 10, 25], fov: 85 }} // Updated initial camera position and FOV for better overview
+          camera={{ 
+            position: [0, isMobileDevice ? 8 : 10, isMobileDevice ? 20 : 25], 
+            fov: isMobileDevice ? 100 : 85 
+          }}
+          gl={{ 
+            antialias: !isMobileDevice,
+            powerPreference: isMobileDevice ? "low-power" : "high-performance",
+            alpha: false,
+            stencil: false,
+            depth: true,
+            preserveDrawingBuffer: false,
+            failIfMajorPerformanceCaveat: false
+          }}
+          dpr={isMobileDevice ? [1, 1.5] : [1, 2]}
+          performance={{ min: 0.4 }}
         >
           <Scene 
             onIntroComplete={() => setIntroComplete(true)} 
@@ -834,28 +838,29 @@ export default function Global() {
           />
         </Canvas>
         
-        {/* Planet indicator */}
+        {/* Mobile-optimized Planet indicator */}
         <div style={{
           position: 'fixed',
-          bottom: '20px',
+          bottom: isMobileDevice ? '10px' : '20px',
           left: '50%',
           transform: 'translateX(-50%)',
           color: 'white',
-          fontSize: '16px',
+          fontSize: isMobileDevice ? '14px' : '16px',
           fontWeight: 'bold',
           background: 'rgba(0,0,0,0.8)',
-          padding: '12px 20px',
+          padding: isMobileDevice ? '8px 15px' : '12px 20px',
           borderRadius: '10px',
           zIndex: 1000,
           border: '1px solid rgba(255, 255, 255, 0.2)',
           textAlign: 'center',
-          minWidth: '200px'
+          minWidth: isMobileDevice ? '150px' : '200px',
+          maxWidth: isMobileDevice ? '90vw' : 'none'
         }}>
-          <div style={{ fontSize: '18px' }}>
+          <div style={{ fontSize: isMobileDevice ? '16px' : '18px' }}>
             {viewMode === 'overview' ? 'Solar System View' : currentPlanet}
           </div>
-          <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '8px' }}>
-            Press 'C' for camera modes • 'V' for view toggle
+          <div style={{ fontSize: isMobileDevice ? '10px' : '12px', opacity: 0.7, marginTop: '4px' }}>
+            {isMobileDevice ? 'Tap C: Camera • V: View' : 'Press \'C\' for camera modes • \'V\' for view toggle'}
           </div>
         </div>
       </div>
