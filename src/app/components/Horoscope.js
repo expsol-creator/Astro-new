@@ -1,8 +1,7 @@
 "use client";
-
 import React, { useRef, useState, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-;import { OrbitControls, useGLTF, Environment } from '@react-three/drei';
+;import { OrbitControls, useGLTF, Environment, useAnimations } from '@react-three/drei';
 import * as THREE from 'three';
 
 // Create dark golden material
@@ -15,13 +14,13 @@ const goldenMaterial = new THREE.MeshStandardMaterial({
 });
 
 function SagittariusModel(props) {
-  const { nodes, materials } = useGLTF('/saggitaruis.gltf');
+  const glb = useGLTF('/Saggitaruis.glb');
   return (
     <group {...props} dispose={null}>
       <mesh
         castShadow
         receiveShadow
-        geometry={nodes.geometry_0.geometry}
+        geometry={glb.nodes.geometry_0.geometry}
         material={goldenMaterial}
       />
     </group>
@@ -29,13 +28,13 @@ function SagittariusModel(props) {
 }
 
 function AriesModel(props) {
-  const { nodes, materials } = useGLTF('/Aries.glb');
+  const glb = useGLTF('/Aries.glb');
   return (
     <group {...props} dispose={null}>
       <mesh
         castShadow
         receiveShadow
-        geometry={nodes.geometry_0.geometry}
+        geometry={glb.nodes.geometry_0.geometry}
         material={goldenMaterial}
       />
     </group>
@@ -43,39 +42,39 @@ function AriesModel(props) {
 }
 
 function Aquarius(props) {
-  const { nodes, materials } = useGLTF('/Aquarius.glb');
+  const glb = useGLTF('/Aquarius.glb');
   return (
     <group {...props} dispose={null}>
       <mesh
         castShadow
         receiveShadow
-        geometry={nodes.geometry_0.geometry}
+        geometry={glb.nodes.geometry_0.geometry}
         material={goldenMaterial}
       />
     </group>
   );
 }
 function Taurus(props) {
-  const { nodes, materials } = useGLTF('/Taurus.glb');
+  const glb = useGLTF('/Taurus.glb');
   return (
     <group {...props} dispose={null}>
     <mesh
       castShadow
       receiveShadow
-      geometry={nodes.geometry_0.geometry}
+      geometry={glb.nodes.geometry_0.geometry}
       material={goldenMaterial}/>  
     </group>
   );
 }
 
 function Gemini(props) {
-  const { nodes, materials } = useGLTF('/Gemini.glb');
+  const glb = useGLTF('/Gemini.glb');
   return (
     <group {...props} dispose={null}>
       <mesh
         castShadow
         receiveShadow
-        geometry={nodes.geometry_0.geometry}
+        geometry={glb.nodes.geometry_0.geometry}
         material={goldenMaterial}
       />
     </group>
@@ -83,13 +82,13 @@ function Gemini(props) {
 }
 
 function Cancer(props) {
-  const { nodes, materials } = useGLTF('/Cancer.glb');
+  const glb = useGLTF('/Cancer.glb');
   return (
     <group {...props} dispose={null}>
       <mesh
         castShadow
         receiveShadow
-        geometry={nodes.geometry_0.geometry}
+        geometry={glb.nodes.geometry_0.geometry}
         material={goldenMaterial}
       />
     </group>
@@ -97,13 +96,13 @@ function Cancer(props) {
 }
 
 function Leo(props) {
-  const { nodes, materials } = useGLTF('/Leo.glb');
+  const glb = useGLTF('/Leo.glb');
   return (
     <group {...props} dispose={null}>
       <mesh
         castShadow
         receiveShadow
-        geometry={nodes.geometry_0.geometry}
+        geometry={glb.nodes.geometry_0.geometry}
         material={goldenMaterial}
       />
     </group>
@@ -111,13 +110,13 @@ function Leo(props) {
 }
 
 function Virgo(props) {
-  const { nodes, materials } = useGLTF('/Virgo.glb');
+  const glb = useGLTF('/Virgo.glb');
   return (
     <group {...props} dispose={null}>
       <mesh
         castShadow
         receiveShadow
-        geometry={nodes.geometry_0.geometry}
+        geometry={glb.nodes.geometry_0.geometry}
         material={goldenMaterial}
       />
     </group>
@@ -125,13 +124,13 @@ function Virgo(props) {
 }
 
 function Libra(props) {
-  const { nodes, materials } = useGLTF('/Libra.glb');
+  const glb = useGLTF('/Libra.glb');
   return (
     <group {...props} dispose={null}>
       <mesh
         castShadow
         receiveShadow
-        geometry={nodes.geometry_0.geometry}
+        geometry={glb.nodes.geometry_0.geometry}
         material={goldenMaterial}
       />
     </group>
@@ -139,13 +138,13 @@ function Libra(props) {
 }
 
 function Scorpio(props) {
-  const { nodes, materials } = useGLTF('/Scorpio.glb');
+  const glb = useGLTF('/Scorpio.glb');
   return (
     <group {...props} dispose={null}>
       <mesh
         castShadow
         receiveShadow
-        geometry={nodes.geometry_0.geometry}
+        geometry={glb.nodes.geometry_0.geometry}
         material={goldenMaterial}
       />
     </group>
@@ -153,13 +152,13 @@ function Scorpio(props) {
 }
 
 function Capricorn(props) {
-  const { nodes, materials } = useGLTF('/Capricorn.glb');
+  const glb = useGLTF('/Capricorn.glb');
   return (
     <group {...props} dispose={null}>
       <mesh
         castShadow
         receiveShadow
-        geometry={nodes.geometry_0.geometry}
+        geometry={glb.nodes.geometry_0.geometry}
         material={goldenMaterial}
       />
     </group>
@@ -167,15 +166,76 @@ function Capricorn(props) {
 }
 
 function Pisces(props) {
-  const { nodes, materials } = useGLTF('/Pisces.glb');
+  const glb = useGLTF('/Pisces.glb');
   return (
     <group {...props} dispose={null}>
       <mesh
         castShadow
         receiveShadow
-        geometry={nodes.geometry_0.geometry}
+        geometry={glb.nodes.geometry_0.geometry}
         material={goldenMaterial}
       />
+    </group>
+  );
+}
+
+// Human model components
+function IndianWomanModel({ scale }) {
+  const glb = useGLTF('/indian_woman_in_saree.glb');
+  const { actions, names } = useAnimations(glb.animations, glb.scene);
+
+  useEffect(() => {
+    // Play "hello" animation if available, fallback to first
+    let helloName = names?.find(n => n.toLowerCase().includes('hello')) || names?.[0];
+    if (helloName && actions && actions[helloName]) {
+      actions[helloName].reset().fadeIn(0.2).play();
+    }
+    // Log available animations
+    if (glb.animations && glb.animations.length > 0) {
+      console.log('IndianWomanModel animations:', glb.animations.map(a => a.name));
+    } else {
+      console.log('IndianWomanModel: No animations found');
+    }
+    return () => {
+      if (helloName && actions && actions[helloName]) {
+        actions[helloName].fadeOut(0.2).stop();
+      }
+    };
+  }, [glb, actions, names]);
+
+  return (
+    <group>
+      <primitive object={glb.scene} scale={scale} position={[-1, 0, 0]} />
+    </group>
+  );
+}
+
+function IndianTeenagerModel({ scale }) {
+  const glb = useGLTF('/indian_teenager.glb');
+  const { actions, names } = useAnimations(glb.animations, glb.scene);
+
+  useEffect(() => {
+    // Play "hello" animation if available, fallback to first
+    let helloName = names?.find(n => n.toLowerCase().includes('hello')) || names?.[0];
+    if (helloName && actions && actions[helloName]) {
+      actions[helloName].reset().fadeIn(0.2).play();
+    }
+    // Log available animations
+    if (glb.animations && glb.animations.length > 0) {
+      console.log('IndianTeenagerModel animations:', glb.animations.map(a => a.name));
+    } else {
+      console.log('IndianTeenagerModel: No animations found');
+    }
+    return () => {
+      if (helloName && actions && actions[helloName]) {
+        actions[helloName].fadeOut(0.2).stop();
+      }
+    };
+  }, [glb, actions, names]);
+
+  return (
+    <group>
+      <primitive object={glb.scene} scale={scale} position={[1, 0, 0]} />
     </group>
   );
 }
@@ -323,18 +383,18 @@ function ZodiacPopup({ zodiac, position, visible }) {
   );
 }
 
-function RotatingZodiacCircle({ onHover, onUnhover }) {
+function RotatingZodiacCircle({ onHover, onUnhover, fov }) {
   const groupRef = useRef();
-  
+
+  // Adjust scale based on FOV (smaller FOV = larger models, larger FOV = smaller models)
+  const baseScale = 1.2;
+  const scale = Math.max(0.5, Math.min(1.5, baseScale * (60 / fov)));
+
   useFrame((state, delta) => {
     if (groupRef.current) {
-      // Ensure rotation continues regardless of hover state
       groupRef.current.rotation.z += delta * 0.1;
-      
-      // Counter-rotate each child to keep them facing outward
       groupRef.current.children.forEach((child) => {
         if (child.children.length > 0) {
-          // Handle nested structure from HoverableZodiacModel
           child.children.forEach((nestedChild) => {
             nestedChild.rotation.z -= delta * 0.1;
           });
@@ -347,6 +407,11 @@ function RotatingZodiacCircle({ onHover, onUnhover }) {
 
   return (
     <group ref={groupRef}>
+      {/* Human models in the center */}
+      <group rotation={[0, 0, 0]} position={[0, 0, 2]} scale={0.8}>
+        <IndianWomanModel scale={scale} />
+        <IndianTeenagerModel scale={scale} />
+      </group>
       {/* 12 Zodiac models arranged in a circle with hover functionality */}
       <HoverableZodiacModel zodiacName="Aries" onHover={onHover} onUnhover={onUnhover}>
         <AriesModel position={[6, 0, 0]} scale={0.8} rotation={[0, 0, 0]} />
@@ -403,9 +468,28 @@ export default function Scene() {
   const [hoveredZodiac, setHoveredZodiac] = useState(null);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [isClient, setIsClient] = useState(false);
+  const [fov, setFov] = useState(60);
 
+  // Responsive FOV calculation
   useEffect(() => {
     setIsClient(true);
+
+    function getResponsiveFov() {
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      // Adjust FOV based on both width and height for better responsiveness
+      if (width < 500 || height < 500) return 95;
+      if (width < 900 || height < 700) return 75;
+      return 60;
+    }
+
+    function handleResize() {
+      setFov(getResponsiveFov());
+    }
+
+    setFov(getResponsiveFov());
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   const handleHover = (zodiacName, event) => {
@@ -423,12 +507,12 @@ export default function Scene() {
       <div style={{ 
         height: '100vh', 
         width: '100%', 
-        backgroundColor: '#FFFFFF',
+        backgroundColor: '#000000', // changed to black
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         fontSize: '18px',
-        color: '#333'
+        color: '#FFF'
       }}>
         Loading 3D Scene...
       </div>
@@ -442,15 +526,15 @@ export default function Scene() {
           height: '100vh', 
           width: '100%'
         }}
-        camera={{ position: [0, 0, 10], fov: 60 }}
+        camera={{ position: [0, 0, 10], fov: fov }}
         shadows
         onPointerMissed={() => {
           document.body.style.cursor = 'default';
           setHoveredZodiac(null);
         }}
       >
-        {/* White background color */}
-        <color attach="background" args={['#FFFFFF']} />
+        {/* Black background color */}
+        <color attach="background" args={['#000000']} />
         
         <ambientLight intensity={0.8} />
         <directionalLight 
@@ -461,7 +545,7 @@ export default function Scene() {
         />
         <pointLight position={[-10, -10, -5]} intensity={0.5} />
         
-        <RotatingZodiacCircle onHover={handleHover} onUnhover={handleUnhover} />
+        <RotatingZodiacCircle onHover={handleHover} onUnhover={handleUnhover} fov={fov} />
         
         {/* Controls for the scene */}
         <OrbitControls 
@@ -485,7 +569,7 @@ export default function Scene() {
 }
 
 // Preload all models
-useGLTF.preload('/saggitaruis.gltf');
+useGLTF.preload('/Saggitaruis.glb');
 useGLTF.preload('/Aries.glb');
 useGLTF.preload('/Taurus.glb');
 useGLTF.preload('/Gemini.glb');
@@ -497,3 +581,5 @@ useGLTF.preload('/Scorpio.glb');
 useGLTF.preload('/Capricorn.glb');
 useGLTF.preload('/Aquarius.glb');
 useGLTF.preload('/Pisces.glb');
+useGLTF.preload('/indian_woman_in_saree.glb');
+useGLTF.preload('/indian_teenager.glb');

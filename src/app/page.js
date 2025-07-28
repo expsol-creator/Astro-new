@@ -1,5 +1,6 @@
 "use client";
 import React, { Suspense, lazy, useState, useEffect } from "react";
+import Horoscope from "./components/Horoscope";
 
 // Lazy load the heavy 3D components
 const Global = lazy(() => import("./components/model"));
@@ -42,6 +43,8 @@ const Home = () => {
       {/* <Suspense fallback={<LoadingScreen message="Loading Horoscope..." />}>
         <Scene />
       </Suspense> */}
+      {/* <Horoscope /> */}
+      {/* <Birthdate/> */}
     </>
   );
 };
